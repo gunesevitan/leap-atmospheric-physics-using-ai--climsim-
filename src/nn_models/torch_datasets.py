@@ -47,10 +47,10 @@ class TabularDataset(Dataset):
 
         if self.targets is not None:
             targets = {column_group_name: torch.as_tensor(target[idx], dtype=torch.float) for column_group_name, target in self.targets.items()}
-        else:
-            targets = None
 
-        return features, targets
+            return features, targets
+        else:
+            return features
 
 
 def prepare_data(df, has_targets=True):
