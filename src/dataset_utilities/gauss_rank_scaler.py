@@ -158,7 +158,6 @@ class GaussRankScaler(BaseEstimator, TransformerMixin):
         return x[is_unique]
 
 
-
 if __name__ == '__main__':
 
     dataset_directory = settings.DATA / 'datasets'
