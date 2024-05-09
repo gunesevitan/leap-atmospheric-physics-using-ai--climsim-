@@ -5,7 +5,7 @@ import logging
 
 # Project structure
 ROOT = Path('/home/gunes/Desktop/Kaggle/leap-atmospheric-physics-using-ai--climsim-')
-DATA = ROOT / 'data'
+DATA = ROOT.parent / 'leap-dataset'
 LOGS = ROOT / 'logs'
 MODELS = ROOT / 'models'
 EDA = ROOT / 'eda'
