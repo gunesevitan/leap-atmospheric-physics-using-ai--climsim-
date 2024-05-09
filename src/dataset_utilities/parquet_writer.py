@@ -53,7 +53,7 @@ if __name__ == '__main__':
     dataset_directory = settings.DATA / 'datasets'
     dataset_directory.mkdir(parents=True, exist_ok=True)
 
-    dataset = 'train'
+    dataset = 'sample_submission'
 
     if dataset == 'train':
 
@@ -65,9 +65,6 @@ if __name__ == '__main__':
             dtypes=dtypes,
             n_threads=16
         )
-
-        df = df.sample(n=1000000, with_replacement=False, shuffle=True, seed=42)
-
         df.write_parquet(dataset_directory / 'train.parquet')
 
     elif dataset == 'test':
