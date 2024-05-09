@@ -41,17 +41,17 @@ def create_folds(df, n_splits, shuffle=True, random_state=42):
 
 if __name__ == '__main__':
 
-    df_train = pd.read_parquet(settings.DATA / 'datasets' / 'train.parquet')
-    settings.logger.info(f'Train Dataset Shape: {df_train.shape}')
+    folds = np.zeros((10091520, 16), dtype=np.uint8)
+    for fold in range(16):
+        start = fold * 625000
+        end = (fold + 1) * 625000
+        if fold < 15:
+            folds[start:end, fold] = 1
+        else:
+            folds[start:, fold] = 1
+        settings.logger.info(f'Fold {fold} - Training Size: {np.sum(folds[:, fold] == 0)} Validation Size: {np.sum(folds[:, fold] == 1)}')
 
-    n_splits = 5
-    df_train = create_folds(
-        df=df_train,
-        n_splits=n_splits,
-        shuffle=True,
-        random_state=42
-    )
+    with open(settings.DATA / 'folds.npz', 'wb') as f:
+        np.savez_compressed(f, folds)
 
-    fold_columns = [f'fold{fold}' for fold in range(1, n_splits + 1)]
-    df_train[fold_columns].to_parquet(settings.DATA / 'folds.parquet')
-    settings.logger.info(f'folds.parquet is saved to {settings.DATA}')
+    settings.logger.info(f'folds.npy is saved to {settings.DATA}')
