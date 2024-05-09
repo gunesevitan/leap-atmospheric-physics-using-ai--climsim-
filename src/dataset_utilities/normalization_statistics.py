@@ -27,12 +27,20 @@ if __name__ == '__main__':
 
         target_means = df.mean(axis=0)
         target_stds = df.std(axis=0)
+        target_mins = df.min(axis=0)
+        target_maxs = df.max(axis=0)
 
         with open(settings.DATA / 'target_means.npy', 'wb') as f:
             np.save(f, target_means)
 
         with open(settings.DATA / 'target_stds.npy', 'wb') as f:
             np.save(f, target_stds)
+
+        with open(settings.DATA / 'target_mins.npy', 'wb') as f:
+            np.save(f, target_mins)
+
+        with open(settings.DATA / 'target_maxs.npy', 'wb') as f:
+            np.save(f, target_maxs)
 
     elif normalization_columns == 'features':
 
@@ -50,6 +58,7 @@ if __name__ == '__main__':
             dtypes=dtypes,
             n_threads=16
         )
+
         df = pl.concat((
             df,
             df_test
@@ -59,9 +68,17 @@ if __name__ == '__main__':
 
         feature_means = df.mean(axis=0)
         feature_stds = df.std(axis=0)
+        feature_mins = df.min(axis=0)
+        feature_maxs = df.max(axis=0)
 
         with open(settings.DATA / 'feature_means.npy', 'wb') as f:
             np.save(f, feature_means)
 
         with open(settings.DATA / 'feature_stds.npy', 'wb') as f:
             np.save(f, feature_stds)
+
+        with open(settings.DATA / 'feature_mins.npy', 'wb') as f:
+            np.save(f, feature_mins)
+
+        with open(settings.DATA / 'feature_maxs.npy', 'wb') as f:
+            np.save(f, feature_maxs)
