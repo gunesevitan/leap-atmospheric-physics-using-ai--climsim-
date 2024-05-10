@@ -36,22 +36,23 @@ class LEAPModel(nn.Module):
             ]
         )
 
-        #self.head = heads.MultiTaskHead(input_dim=input_dim)
-        self.head = heads.SingleOutputHead(input_dim=input_dim)
+        self.head = heads.MultiOutputHead(input_dim=input_dim)
 
     def forward(self, x):
 
-        x = torch.cat([v for v in x.values()], dim=1)
+        #x = torch.cat([v for v in x.values()], dim=1)
 
         x = self.mlp(x)
 
-        #(
-        #    ptend_t_outout, ptend_q0001_outout, ptend_q0002_outout,
-        #    ptend_q0003_outout, ptend_u_outout, ptend_v_outout,
-        #    cam_out_NETSW_outout, cam_out_FLWDS_outout, cam_out_PRECSC_outout, cam_out_PRECC_outout,
-        #    cam_out_SOLS_outout, cam_out_SOLL_outout, cam_out_SOLSD_outout, cam_out_SOLLD_outout
-        #) = self.head(x)
-#
+        outputs = (
+            ptend_t_outout, ptend_q0001_outout, ptend_q0002_outout,
+            ptend_q0003_outout, ptend_u_outout, ptend_v_outout,
+            cam_out_NETSW_outout, cam_out_FLWDS_outout, cam_out_PRECSC_outout, cam_out_PRECC_outout,
+            cam_out_SOLS_outout, cam_out_SOLL_outout, cam_out_SOLSD_outout, cam_out_SOLLD_outout
+        ) = self.head(x)
+
+        outputs = torch.cat(outputs, dim=1)
+
         #return (
         #    ptend_t_outout, ptend_q0001_outout, ptend_q0002_outout,
         #    ptend_q0003_outout, ptend_u_outout, ptend_v_outout,
@@ -59,8 +60,7 @@ class LEAPModel(nn.Module):
         #    cam_out_SOLS_outout, cam_out_SOLL_outout, cam_out_SOLSD_outout, cam_out_SOLLD_outout
         #)
 
-
-        outputs = self.head(x)
+        #outputs = self.head(x)
         #outputs = torch.cat(outputs, dim=1)
 
         return outputs
