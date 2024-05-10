@@ -276,7 +276,7 @@ def visualize_predictions(train_target, train_predictions, test_predictions, sco
     fig, axes = plt.subplots(figsize=(32, 16), ncols=2)
 
     axes[0].scatter(train_target, train_predictions)
-    axes[1].hist(train_predictions, 16, alpha=0.5, label='Training Targets')
+    axes[1].hist(train_target, 16, alpha=0.5, label='Training Targets')
     axes[1].hist(train_predictions, 16, alpha=0.5, label='Training Predictions')
     axes[1].hist(test_predictions, 16, alpha=0.5, label='Test Predictions')
 
