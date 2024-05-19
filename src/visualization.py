@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 def visualize_learning_curve(training_scores, validation_scores, best_epoch, metric, path=None):
@@ -246,39 +247,47 @@ def visualize_vertically_resolved_target_scores(vertically_resolved_target_score
         plt.close(fig)
 
 
-def visualize_predictions(train_target, train_predictions, test_predictions, scores, path=None):
+def visualize_predictions(targets, predictions, score, target_column, path=None):
 
     """
     Visualize targets/predictions as scatter and histogram
 
     Parameters
     ----------
-    train_target: numpy.ndarray of shape (n_samples)
+    targets: numpy.ndarray of shape (n_samples)
         Array of targets
 
-    train_predictions: numpy.ndarray of shape (n_samples)
+    predictions: numpy.ndarray of shape (n_samples)
         Array of predictions
-
-    test_predictions: numpy.ndarray of shape (n_test_samples)
-        Array of test predictions
 
     scores: dict
         Dictionary of scores
+
+    target_column: str
+        Name of the target column
 
     path: str, pathlib.Path or None
         Path of the output file or None (if path is None, plot is displayed with selected backend)
     """
 
-    train_target_statistics = train_target.agg(['mean', 'std', 'min', 'max']).to_dict()
-    train_prediction_statistics = train_predictions.agg(['mean', 'std', 'min', 'max']).to_dict()
-    test_prediction_statistics = test_predictions.agg(['mean', 'std', 'min', 'max']).to_dict()
+    targets_statistics = {
+        'mean': np.mean(targets),
+        'std': np.std(targets),
+        'min': np.min(targets),
+        'max': np.max(targets),
+    }
+    predictions_statistics = {
+        'mean': np.mean(predictions),
+        'std': np.std(predictions),
+        'min': np.min(predictions),
+        'max': np.max(predictions),
+    }
 
     fig, axes = plt.subplots(figsize=(32, 16), ncols=2)
 
-    axes[0].scatter(train_target, train_predictions)
-    axes[1].hist(train_target, 16, alpha=0.5, label='Training Targets')
-    axes[1].hist(train_predictions, 16, alpha=0.5, label='Training Predictions')
-    axes[1].hist(test_predictions, 16, alpha=0.5, label='Test Predictions')
+    axes[0].scatter(targets, predictions)
+    axes[1].hist(targets, 16, alpha=0.5, label='Training Targets')
+    axes[1].hist(predictions, 16, alpha=0.5, label='Training Predictions')
 
     for i in range(2):
         axes[i].tick_params(axis='x', labelsize=15)
@@ -287,20 +296,100 @@ def visualize_predictions(train_target, train_predictions, test_predictions, sco
     axes[0].set_ylabel('Prediction', size=15)
 
     scatter_title = f'''
-    Target {train_target.name}
-    Training Target vs Prediction
-    OOF Scores RMSE: {scores['rmse']:.4f} MAE {scores['mae']:.4f} R2 {scores['r2_score']:.4f}
+    Target {target_column}
+    Training Targets vs Predictions
+    OOF Scores R2 {score:.6f}
     '''
     axes[0].set_title(scatter_title, size=20, pad=15)
 
     histogram_title = f'''
         Training Target/Predictions and Test Predictions Histogram
-        Training Target: mean: {train_target_statistics['mean']:.4f} std: {train_target_statistics['std']:.4f} min: {train_target_statistics['min']:.4f} max: {train_target_statistics['max']:.4f}
-        Training Predictions: mean: {train_prediction_statistics['mean']:.4f} std: {train_prediction_statistics['std']:.4f} min: {train_prediction_statistics['min']:.4f} max: {train_prediction_statistics['max']:.4f}
-        Test Predictions: mean: {test_prediction_statistics['mean']:.4f} std: {test_prediction_statistics['std']:.4f} min: {test_prediction_statistics['min']:.4f} max: {test_prediction_statistics['max']:.4f}
+        Training Target: mean: {targets_statistics['mean']:.6f} std: {targets_statistics['std']:.6f} min: {targets_statistics['min']:.6f} max: {targets_statistics['max']:.6f}
+        Training Predictions: mean: {predictions_statistics['mean']:.6f} std: {predictions_statistics['std']:.6f} min: {predictions_statistics['min']:.6f} max: {predictions_statistics['max']:.6f}
         '''
     axes[1].set_title(histogram_title, size=20, pad=15)
     axes[1].legend(prop={'size': 18})
+
+    if path is None:
+        plt.show()
+    else:
+        plt.savefig(path)
+        plt.close(fig)
+
+
+def visualize_feature_importance(df_feature_importance, title, path=None):
+
+    """
+    Visualize feature importance in descending order
+
+    Parameters
+    ----------
+    df_feature_importance: pandas.DataFrame of shape (n_features, n_splits)
+        Dataframe of feature importance
+
+    title: str
+        Title of the plot
+
+    path: path-like str or None
+        Path of the output file or None (if path is None, plot is displayed with selected backend)
+    """
+
+    fig, ax = plt.subplots(figsize=(24, 120), dpi=100)
+    ax.barh(
+        range(len(df_feature_importance)),
+        df_feature_importance['mean'],
+        xerr=df_feature_importance['std'],
+        ecolor='black',
+        capsize=10,
+        align='center',
+    )
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    ax.set_yticks(range(len(df_feature_importance)))
+    ax.set_yticklabels([f'{k} ({v:.2f})' for k, v in df_feature_importance['mean'].to_dict().items()])
+    ax.tick_params(axis='x', labelsize=15, pad=10)
+    ax.tick_params(axis='y', labelsize=15, pad=10)
+    ax.set_title(title, size=20, pad=15)
+    plt.gca().invert_yaxis()
+
+    if path is None:
+        plt.show()
+    else:
+        plt.savefig(path, bbox_inches='tight')
+        plt.close(fig)
+
+
+def visualize_feature_importance_heatmap(df, title, path=None):
+
+    """
+    Visualize feature importance as a heatmap
+
+    Parameters
+    ----------
+    df: pandas.DataFrame of shape (n_features, n_targets)
+        Dataframe of per target feature importance
+
+    title: str
+        Title of the plot
+
+    path: path-like str or None
+        Path of the output file or None (if path is None, plot is displayed with selected backend)
+    """
+
+    fig, ax = plt.subplots(figsize=(100, 100), dpi=100)
+    ax = sns.heatmap(
+        df.values,
+        annot=False,
+        square=True,
+        cmap='coolwarm',
+    )
+    cbar = ax.collections[0].colorbar
+    cbar.ax.tick_params(labelsize=15)
+    ax.set_xticks(np.arange(len(df.columns.tolist())) + 0.5, df.columns.tolist())
+    ax.set_yticks(np.arange(len(df.index.tolist())) + 0.5, df.index.tolist())
+    ax.tick_params(axis='x', labelsize=10)
+    ax.tick_params(axis='y', labelsize=10)
+    ax.set_title(title, size=20, pad=15)
 
     if path is None:
         plt.show()
