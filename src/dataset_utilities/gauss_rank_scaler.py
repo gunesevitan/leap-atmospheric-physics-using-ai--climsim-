@@ -180,5 +180,35 @@ if __name__ == '__main__':
         scaler = GaussRankScaler(copy=False, n_jobs=None)
         scaler.fit(df)
 
-        with open(settings.DATA / 'gauss_rank_scaler.pickle', 'wb') as f:
+        with open(settings.DATA / 'target_gauss_rank_scaler.pickle', 'wb') as f:
+            pickle.dump(scaler, f)
+
+    elif normalization_columns == 'features':
+
+        columns = np.arange(1, 557).tolist()
+        dtypes = [pl.Float32 for i in range(len(columns))]
+        features = pl.read_csv(
+            settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'train.csv',
+            columns=columns,
+            dtypes=dtypes,
+            n_threads=16
+        )
+        df_test = pl.read_csv(
+            settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'test.csv',
+            columns=columns,
+            dtypes=dtypes,
+            n_threads=16
+        )
+
+        features = pl.concat((
+            features,
+            df_test
+        ), how='vertical')
+        del df_test
+        features = features.to_numpy()
+
+        scaler = GaussRankScaler(copy=False, n_jobs=None)
+        scaler.fit(features)
+
+        with open(settings.DATA / 'feature_gauss_rank_scaler.pickle', 'wb') as f:
             pickle.dump(scaler, f)
