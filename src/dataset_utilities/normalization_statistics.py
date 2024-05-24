@@ -1,8 +1,6 @@
 import sys
-import pickle
 import numpy as np
 import polars as pl
-from sklearn.preprocessing import RobustScaler
 
 sys.path.append('..')
 import settings
@@ -61,22 +59,35 @@ if __name__ == '__main__':
         with open(settings.DATA / 'target_rmss.npy', 'wb') as f:
             np.save(f, target_rmss)
 
-        robust_scaler = RobustScaler(
-            with_centering=True,
-            with_scaling=True,
-            quantile_range=(25.0, 75.0),
-            copy=False,
-            unit_variance=False
-        )
-        robust_scaler.fit(targets)
-        with open(settings.DATA / 'target_robust_scaler.pickle', 'wb') as f:
-            pickle.dump(robust_scaler, f)
+        targets -= target_mins
+        targets = np.log1p(targets)
+
+        target_log_means = targets.mean(axis=0)
+        target_log_stds = targets.std(axis=0)
+        target_log_mins = targets.min(axis=0)
+        target_log_maxs = targets.max(axis=0)
+        target_log_rmss = np.sqrt(np.mean(targets ** 2, axis=0))
+
+        with open(settings.DATA / 'target_log_means.npy', 'wb') as f:
+            np.save(f, target_log_means)
+
+        with open(settings.DATA / 'target_log_stds.npy', 'wb') as f:
+            np.save(f, target_log_stds)
+
+        with open(settings.DATA / 'target_log_mins.npy', 'wb') as f:
+            np.save(f, target_log_mins)
+
+        with open(settings.DATA / 'target_log_maxs.npy', 'wb') as f:
+            np.save(f, target_log_maxs)
+
+        with open(settings.DATA / 'target_log_rmss.npy', 'wb') as f:
+            np.save(f, target_log_rmss)
 
     elif normalization_columns == 'features':
 
         columns = np.arange(1, 557).tolist()
         dtypes = [pl.Float32 for i in range(len(columns))]
-        df = pl.read_csv(
+        features = pl.read_csv(
             settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'train.csv',
             columns=columns,
             dtypes=dtypes,
@@ -89,17 +100,18 @@ if __name__ == '__main__':
             n_threads=16
         )
 
-        df = pl.concat((
-            df,
+        features = pl.concat((
+            features,
             df_test
         ), how='vertical')
         del df_test
-        df = df.to_numpy()
+        features = features.to_numpy()
 
-        feature_means = df.mean(axis=0)
-        feature_stds = df.std(axis=0)
-        feature_mins = df.min(axis=0)
-        feature_maxs = df.max(axis=0)
+        feature_means = features.mean(axis=0)
+        feature_stds = features.std(axis=0)
+        feature_mins = features.min(axis=0)
+        feature_maxs = features.max(axis=0)
+        feature_rmss = np.sqrt(np.mean(features ** 2, axis=0))
 
         with open(settings.DATA / 'feature_means.npy', 'wb') as f:
             np.save(f, feature_means)
@@ -112,3 +124,30 @@ if __name__ == '__main__':
 
         with open(settings.DATA / 'feature_maxs.npy', 'wb') as f:
             np.save(f, feature_maxs)
+
+        with open(settings.DATA / 'feature_rmss.npy', 'wb') as f:
+            np.save(f, feature_rmss)
+
+        features -= feature_mins
+        features = np.log1p(features)
+
+        feature_log_means = features.mean(axis=0)
+        feature_log_stds = features.std(axis=0)
+        feature_log_mins = features.min(axis=0)
+        feature_log_maxs = features.max(axis=0)
+        feature_log_rmss = np.sqrt(np.mean(features ** 2, axis=0))
+
+        with open(settings.DATA / 'feature_log_means.npy', 'wb') as f:
+            np.save(f, feature_log_means)
+
+        with open(settings.DATA / 'feature_log_stds.npy', 'wb') as f:
+            np.save(f, feature_log_stds)
+
+        with open(settings.DATA / 'feature_log_mins.npy', 'wb') as f:
+            np.save(f, feature_log_mins)
+
+        with open(settings.DATA / 'feature_log_maxs.npy', 'wb') as f:
+            np.save(f, feature_log_maxs)
+
+        with open(settings.DATA / 'feature_log_rmss.npy', 'wb') as f:
+            np.save(f, feature_log_rmss)
