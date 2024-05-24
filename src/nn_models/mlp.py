@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 
 import heads
@@ -10,22 +9,28 @@ class MLPBlock(nn.Module):
 
         super(MLPBlock, self).__init__()
 
-        self.mlp = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim, bias=True),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, input_dim, bias=True),
-        )
+        self.l1 = nn.Linear(input_dim, hidden_dim, bias=True)
+        self.bn = nn.BatchNorm1d(hidden_dim)
+        self.act = nn.ReLU()
+        self.l2 = nn.Linear(hidden_dim, input_dim, bias=True)
 
     def forward(self, x):
-        return self.mlp(x)
+
+        x_i = x
+        x = self.l1(x)
+        x = self.bn(x)
+        x = self.act(x)
+        x = self.l2(x)
+        x = x_i + x
+
+        return x
 
 
-class LEAPModel(nn.Module):
+class MLP(nn.Module):
 
     def __init__(self, input_dim, mlp_hidden_dim, n_blocks):
 
-        super(LEAPModel, self).__init__()
+        super(MLP, self).__init__()
 
         self.mlp = nn.Sequential(
             *[
@@ -35,32 +40,11 @@ class LEAPModel(nn.Module):
                 ) for _ in range(n_blocks)
             ]
         )
-
-        self.head = heads.MultiOutputHead(input_dim=input_dim)
+        self.head = heads.SingleOutputHead(input_dim=input_dim)
 
     def forward(self, x):
 
-        #x = torch.cat([v for v in x.values()], dim=1)
-
         x = self.mlp(x)
-
-        outputs = (
-            ptend_t_outout, ptend_q0001_outout, ptend_q0002_outout,
-            ptend_q0003_outout, ptend_u_outout, ptend_v_outout,
-            cam_out_NETSW_outout, cam_out_FLWDS_outout, cam_out_PRECSC_outout, cam_out_PRECC_outout,
-            cam_out_SOLS_outout, cam_out_SOLL_outout, cam_out_SOLSD_outout, cam_out_SOLLD_outout
-        ) = self.head(x)
-
-        outputs = torch.cat(outputs, dim=1)
-
-        #return (
-        #    ptend_t_outout, ptend_q0001_outout, ptend_q0002_outout,
-        #    ptend_q0003_outout, ptend_u_outout, ptend_v_outout,
-        #    cam_out_NETSW_outout, cam_out_FLWDS_outout, cam_out_PRECSC_outout, cam_out_PRECC_outout,
-        #    cam_out_SOLS_outout, cam_out_SOLL_outout, cam_out_SOLSD_outout, cam_out_SOLLD_outout
-        #)
-
-        #outputs = self.head(x)
-        #outputs = torch.cat(outputs, dim=1)
+        outputs = self.head(x)
 
         return outputs
