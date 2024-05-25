@@ -1,3 +1,4 @@
 from torch.nn import *
 
-from mlp import LEAPModel
+from mlp import MLP
+from kan import KAN
