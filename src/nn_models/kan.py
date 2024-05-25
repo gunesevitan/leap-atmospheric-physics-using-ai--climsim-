@@ -234,6 +234,7 @@ class KANLinear(torch.nn.Module):
 
 
 class KAN(torch.nn.Module):
+
     def __init__(
         self,
         layers_hidden,
@@ -268,8 +269,6 @@ class KAN(torch.nn.Module):
             )
 
     def forward(self, x: torch.Tensor, update_grid=False):
-
-        x = torch.cat([v for v in x.values()], dim=1)
 
         for layer in self.layers:
             if update_grid:
