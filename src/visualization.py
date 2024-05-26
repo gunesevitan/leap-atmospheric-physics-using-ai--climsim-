@@ -247,7 +247,7 @@ def visualize_vertically_resolved_target_scores(vertically_resolved_target_score
         plt.close(fig)
 
 
-def visualize_predictions(targets, predictions, score, target_column, path=None):
+def visualize_predictions(targets, predictions, score, weight, target_column, path=None):
 
     """
     Visualize targets/predictions as scatter and histogram
@@ -260,8 +260,11 @@ def visualize_predictions(targets, predictions, score, target_column, path=None)
     predictions: numpy.ndarray of shape (n_samples)
         Array of predictions
 
-    scores: dict
-        Dictionary of scores
+    score: float
+        R2 score
+
+    weight: float
+        Target weight
 
     target_column: str
         Name of the target column
@@ -298,7 +301,7 @@ def visualize_predictions(targets, predictions, score, target_column, path=None)
     scatter_title = f'''
     Target {target_column}
     Training Targets vs Predictions
-    OOF Scores R2 {score:.6f}
+    OOF Scores R2 {score:.6f} - Target Weight {weight:.6f}
     '''
     axes[0].set_title(scatter_title, size=20, pad=15)
 
