@@ -3,18 +3,24 @@ import pandas as pd
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 
-def regression_scores(y_true, y_pred):
+def regression_scores(y_true, y_pred, weights, target_columns):
 
     """
     Calculate regression metric scores from given ground truth and predictions
 
     Parameters
     ----------
-    y_true: array-like of shape (n_samples, n_targets)
+    y_true: numpy.ndarray of shape (n_samples, n_targets)
         Array of ground truth values
 
-    y_pred: array-like of shape (n_samples, n_targets)
+    y_pred: numpy.ndarray of shape (n_samples, n_targets)
         Array of prediction values
+
+    weights: numpy.ndarray of shape (n_targets)
+        Array of weights
+
+    target_columns: list of shape (n_targets)
+        Array of target weights
 
     Returns
     -------
@@ -24,6 +30,13 @@ def regression_scores(y_true, y_pred):
     target_scores: pandas.DataFrame of shape (n_target_columns, 3)
         Dataframe of per target regression scores
     """
+
+    y_true = y_true.copy()
+    y_pred = y_pred.copy()
+
+    if weights is not None:
+        y_true *= weights
+        y_pred *= weights
 
     mses = []
     maes = []
@@ -39,7 +52,15 @@ def regression_scores(y_true, y_pred):
         'mean_absolute_error': float(np.mean(maes)),
         'r2_score': float(np.mean(r2_scores)),
     }
-    target_scores = pd.DataFrame([mses, maes, r2_scores]).T.rename(columns={0: 'rmse', 1: 'mae', 2: 'r2_score'})
+    target_scores = pd.DataFrame([mses, maes, r2_scores]).T.rename(columns={0: 'mse', 1: 'mae', 2: 'r2_score'})
+    target_scores.index = target_columns
+    target_scores['weight'] = weights
+
+    non_zero_weight_target_idx = target_scores['weight'] != 0
+    non_zero_global_scores = target_scores.loc[non_zero_weight_target_idx, ['mse', 'mae', 'r2_score']].mean(axis=0).to_dict()
+    global_scores['non_zero_weight_mean_squared_error'] = float(non_zero_global_scores['mse'])
+    global_scores['non_zero_weight_mean_absolute_error'] = float(non_zero_global_scores['mae'])
+    global_scores['non_zero_weight_r2_score'] = float(non_zero_global_scores['r2_score'])
 
     return global_scores, target_scores
 
