@@ -23,18 +23,6 @@ def load_statistics(statistics_directory):
     feature_maxs = np.load(statistics_directory / 'feature_maxs.npy')
     feature_rmss = np.load(statistics_directory / 'feature_rmss.npy')
 
-    feature_means = np.concatenate((
-        feature_means[:360].reshape(-1, 60),
-        np.expand_dims(feature_means[360:376], axis=-1).repeat(repeats=60, axis=-1),
-        feature_means[376:].reshape(-1, 60),
-    ), axis=0)
-
-    feature_stds = np.concatenate((
-        feature_stds[:360].reshape(-1, 60),
-        np.expand_dims(feature_stds[360:376], axis=-1).repeat(repeats=60, axis=-1),
-        feature_stds[376:].reshape(-1, 60),
-    ), axis=0)
-
     target_weights = np.load(statistics_directory / 'target_weights.npy')
     target_means = np.load(statistics_directory / 'target_means.npy')
     target_stds = np.load(statistics_directory / 'target_stds.npy')
