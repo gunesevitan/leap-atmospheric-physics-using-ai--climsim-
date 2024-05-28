@@ -6,18 +6,12 @@ from torch.utils.data import Dataset
 
 class TabularDataset(Dataset):
 
-    def __init__(
-            self,
-            feature_paths, target_paths=None,
-            feature_statistics=None, target_statistics=None, feature_normalization_type=None, target_normalization_type=None
-    ):
+    def __init__(self, sample_ids, dataset_directory, dataset=False, statistics=None):
 
-        self.feature_paths = feature_paths
-        self.target_paths = target_paths
-        self.feature_statistics = feature_statistics
-        self.target_statistics = target_statistics
-        self.feature_normalization_type = feature_normalization_type
-        self.target_normalization_type = target_normalization_type
+        self.sample_ids = sample_ids
+        self.dataset_directory = dataset_directory
+        self.dataset = dataset
+        self.statistics = statistics
 
     def __len__(self):
 
@@ -30,7 +24,7 @@ class TabularDataset(Dataset):
             Length of the dataset
         """
 
-        return len(self.feature_paths)
+        return len(self.sample_ids)
 
     def __getitem__(self, idx):
 
@@ -44,28 +38,22 @@ class TabularDataset(Dataset):
 
         Returns
         -------
-        features: torch.Tensor of shape (556)
+        features: torch.Tensor of shape (60, 25)
             Features tensor
 
         targets: torch.Tensor of shape (368)
             Targets tensor
         """
 
-        features = np.load(self.feature_paths[idx])['arr']
-        features = get_feature_tensors(
-            features=features,
-            feature_statistics=self.feature_statistics,
-            feature_normalization_type=self.feature_normalization_type
-        )
+        features = np.load(self.dataset_directory / f'{self.dataset}_features' / f'{self.sample_ids[idx]}.npz')['arr']
+        features = (features - self.statistics['feature']['mean']) / self.statistics['feature']['std']
+        features = torch.as_tensor(features, dtype=torch.float)
 
-        if self.target_paths is not None:
+        if self.dataset == 'training':
 
-            targets = np.load(self.target_paths[idx])['arr']
-            targets = get_target_tensors(
-                targets=targets,
-                target_statistics=self.target_statistics,
-                target_normalization_type=self.target_normalization_type
-            )
+            targets = np.load(self.dataset_directory / f'{self.dataset}_targets' / f'{self.sample_ids[idx]}.npz')['arr']
+            targets = (targets - self.statistics['target']['mean']) / self.statistics['target']['rms']
+            targets = torch.as_tensor(targets, dtype=torch.float)
 
             return features, targets
 
