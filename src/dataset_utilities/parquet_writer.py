@@ -58,7 +58,7 @@ if __name__ == '__main__':
     if dataset == 'train':
 
         columns = np.arange(1, 925).tolist()
-        dtypes = [pl.Float64 for i in range(len(columns))]
+        dtypes = [pl.Float32 for i in range(len(columns))]
         df = pl.read_csv(
             settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'train.csv',
             columns=columns,
@@ -70,7 +70,7 @@ if __name__ == '__main__':
     elif dataset == 'test':
 
         columns = np.arange(1, 557).tolist()
-        dtypes = [pl.Float64 for i in range(len(columns))]
+        dtypes = [pl.Float32 for i in range(len(columns))]
         df = pl.read_csv(
             settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'test.csv',
             columns=columns,
@@ -82,7 +82,7 @@ if __name__ == '__main__':
     elif dataset == 'sample_submission':
 
         columns = np.arange(0, 369).tolist()
-        dtypes = [pl.String] + [pl.Float64 for i in range(len(columns) - 1)]
+        dtypes = [pl.String] + [pl.Float32 for i in range(len(columns) - 1)]
         df = pl.read_csv(
             settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'sample_submission.csv',
             columns=columns,

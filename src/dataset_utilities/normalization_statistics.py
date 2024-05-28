@@ -11,12 +11,12 @@ if __name__ == '__main__':
     dataset_directory = settings.DATA / 'datasets'
     dataset_directory.mkdir(parents=True, exist_ok=True)
 
-    normalization_columns = 'features'
+    normalization_columns = 'targets'
 
     if normalization_columns == 'targets':
 
         weight_columns = np.arange(1, 369).tolist()
-        weight_dtypes = [pl.Float64 for i in range(len(weight_columns))]
+        weight_dtypes = [pl.Float32 for i in range(len(weight_columns))]
         target_weights = pl.read_csv(
             settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'sample_submission.csv',
             columns=weight_columns,
@@ -29,7 +29,7 @@ if __name__ == '__main__':
             np.save(f, target_weights)
 
         target_columns = np.arange(557, 925).tolist()
-        target_dtypes = [pl.Float64 for i in range(len(target_columns))]
+        target_dtypes = [pl.Float32 for i in range(len(target_columns))]
         targets = pl.read_csv(
             settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'train.csv',
             columns=target_columns,
@@ -62,7 +62,7 @@ if __name__ == '__main__':
     elif normalization_columns == 'features':
 
         columns = np.arange(1, 557).tolist()
-        dtypes = [pl.Float64 for i in range(len(columns))]
+        dtypes = [pl.Float32 for i in range(len(columns))]
         features = pl.read_csv(
             settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'train.csv',
             columns=columns,
