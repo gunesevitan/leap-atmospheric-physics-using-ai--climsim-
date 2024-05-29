@@ -6,7 +6,6 @@ import json
 from glob import glob
 from pathlib import Path
 from tqdm import tqdm
-from itertools import chain
 import numpy as np
 import pandas as pd
 import torch
@@ -179,31 +178,33 @@ if __name__ == '__main__':
     config = yaml.load(open(model_directory / 'config.yaml'), Loader=yaml.FullLoader)
     settings.logger.info(f'Running {model_directory} model in {args.mode} mode')
 
-    # Select targets and features as individual arrays and grouped arrays
-    columns = pd.read_csv(settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'train.csv', nrows=0).columns.tolist()[1:]
+    # Select targets and features as individual numpy arrays
+    df = pd.read_parquet(settings.DATA / 'datasets' / 'train.parquet')
+    columns = df.columns.tolist()
     target_columns = columns[-368:]
     target_column_groups = preprocessing.get_target_column_groups(columns=target_columns)
     feature_columns = columns[:-368]
     feature_column_groups = preprocessing.get_feature_column_groups(columns=feature_columns)
     prediction_columns = [f'{column}_prediction' for column in target_columns]
 
+    features = df[feature_columns].to_numpy()
+    targets = df[target_columns].to_numpy()
+    del df
+
     # Load precomputed folds
     folds = np.load(settings.DATA / 'folds.npz')['arr_0']
     file_idx = np.arange(folds.shape[0], dtype=np.uint32)
     settings.logger.info(f'Loaded folds: {folds.shape}')
 
-    # Load precomputed statistics
-    feature_means, feature_stds = np.load(settings.DATA / 'feature_means.npy'), np.load(settings.DATA / 'feature_stds.npy')
-    feature_mins, feature_maxs = np.load(settings.DATA / 'feature_mins.npy'), np.load(settings.DATA / 'feature_maxs.npy')
-    target_means, target_stds = np.load(settings.DATA / 'target_means.npy'), np.load(settings.DATA / 'target_stds.npy')
-    target_mins, target_maxs = np.load(settings.DATA / 'target_mins.npy'), np.load(settings.DATA / 'target_maxs.npy')
-    feature_stds = np.where(feature_stds == 0.0, 1.0, feature_stds)
-    target_stds = np.where(target_stds == 0.0, 1.0, target_stds)
-    feature_statistics = {'mean': feature_means, 'std': feature_stds, 'min': feature_mins, 'max': feature_maxs}
-    target_statistics = {'mean': target_means, 'std': target_stds, 'min': target_mins, 'max': target_maxs}
-    feature_normalization_type = config['dataset']['feature_normalization_type']
-    target_normalization_type = config['dataset']['target_normalization_type']
-    settings.logger.info(f'Loaded statistics - Feature normalization: {feature_normalization_type} - Target normalization: {target_normalization_type}')
+    # Load precomputed normalizers
+    statistics = preprocessing.load_statistics(statistics_directory=settings.DATA / 'datasets')
+    statistics['feature']['std'] = np.where(statistics['feature']['std'] <= 1e-9, 1.0, statistics['feature']['std'])
+    statistics['target']['rms'] = np.where(statistics['target']['rms'] == 0, 1.0, statistics['target']['rms'])
+
+    features -= statistics['feature']['mean']
+    features /= statistics['feature']['std']
+    targets -= statistics['target']['mean']
+    targets /= statistics['target']['rms']
 
     torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -217,18 +218,6 @@ if __name__ == '__main__':
         training_idx = file_idx[training_mask]
         validation_idx = file_idx[validation_mask]
 
-        # Create training and validation inputs and targets paths
-        training_feature_paths, training_target_paths = torch_datasets.prepare_file_paths(
-            idx=training_idx,
-            features_path=settings.DATA / 'datasets' / 'numpy_arrays' / 'training_features',
-            targets_path=settings.DATA / 'datasets' / 'numpy_arrays' / 'training_targets',
-        )
-        validation_feature_paths, validation_target_paths = torch_datasets.prepare_file_paths(
-            idx=validation_idx,
-            features_path=settings.DATA / 'datasets' / 'numpy_arrays' / 'training_features',
-            targets_path=settings.DATA / 'datasets' / 'numpy_arrays' / 'training_targets',
-        )
-
         settings.logger.info(
             f'''
             Training Folds: {config['training']['training_folds']} {training_idx.shape[0]} ({training_idx.shape[0] // config["training"]["training_batch_size"] + 1} steps)
@@ -237,13 +226,9 @@ if __name__ == '__main__':
         )
 
         # Create training and validation datasets and dataloaders
-        training_dataset = torch_datasets.TabularDataset(
-            feature_paths=training_feature_paths,
-            target_paths=training_target_paths,
-            feature_statistics=feature_statistics,
-            target_statistics=target_statistics,
-            feature_normalization_type=feature_normalization_type,
-            target_normalization_type=target_normalization_type
+        training_dataset = torch_datasets.TabularInMemoryDataset(
+            features=features[training_idx],
+            targets=targets[training_idx]
         )
         training_loader = DataLoader(
             training_dataset,
@@ -253,13 +238,9 @@ if __name__ == '__main__':
             drop_last=False,
             num_workers=config['training']['num_workers']
         )
-        validation_dataset = torch_datasets.TabularDataset(
-            feature_paths=validation_feature_paths,
-            target_paths=validation_target_paths,
-            feature_statistics=feature_statistics,
-            target_statistics=target_statistics,
-            feature_normalization_type=feature_normalization_type,
-            target_normalization_type=target_normalization_type
+        validation_dataset = torch_datasets.TabularInMemoryDataset(
+            features=features[validation_idx],
+            targets=targets[validation_idx]
         )
         validation_loader = DataLoader(
             validation_dataset,
@@ -316,60 +297,16 @@ if __name__ == '__main__':
                 amp=amp
             )
 
-            # Rescale validation targets and predictions back to their normal scales
-            validation_targets = (validation_targets * target_stds) + target_means
-            validation_predictions = (validation_predictions * target_stds) + target_means
-
             training_results = {'loss': training_loss}
             validation_results = {'loss': validation_loss}
 
-            if epoch % config['training']['metric_frequency'] == 0:
-
-                # Calculate validation scores with model predictions
-                global_validation_scores, target_validation_scores = metrics.regression_scores(
-                    y_true=validation_targets,
-                    y_pred=validation_predictions
-                )
-                target_validation_scores.index = target_columns
-
-                # Calculate validation scores with mean predictions
-                validation_mean_predictions = np.repeat(target_means.reshape(1, -1), validation_targets.shape[0], axis=0)
-                mean_global_validation_scores, mean_target_validation_scores = metrics.regression_scores(
-                    y_true=validation_targets,
-                    y_pred=validation_mean_predictions
-                )
-                mean_target_validation_scores.index = target_columns
-
-                # Replace columns on which the performance of mean prediction is better than model's prediction
-                target_overwrite_idx = np.where(mean_target_validation_scores['r2_score'] > target_validation_scores['r2_score'])[0]
-                validation_columns_to_overwrite = np.array(target_columns)[target_overwrite_idx]
-                validation_predictions[:, target_overwrite_idx] = validation_mean_predictions[:, target_overwrite_idx]
-                global_overwritten_validation_scores, target_overwritten_validation_scores = metrics.regression_scores(
-                    y_true=validation_targets,
-                    y_pred=validation_predictions
-                )
-                target_validation_scores.index = target_columns
-
-                settings.logger.info(
-                    f'''
-                    Epoch {epoch}
-                    Training Loss: {training_loss:.6f}
-                    Validation Loss: {validation_loss:.6f}
-                    Raw Global Validation Scores: {json.dumps(global_validation_scores, indent=2)}
-                    Mean Overwritten Global Validation Scores: {json.dumps(global_overwritten_validation_scores, indent=2)}
-                    Overwritten Target Columns: {len(validation_columns_to_overwrite)}
-                    ({validation_columns_to_overwrite})
-                    '''
-                )
-
-            else:
-                settings.logger.info(
-                    f'''
-                    Epoch {epoch}
-                    Training Loss: {training_loss:.6f}
-                    Validation Loss: {validation_loss:.6f}
-                    '''
-                )
+            settings.logger.info(
+                f'''
+                Epoch {epoch}
+                Training Loss: {training_loss:.6f}
+                Validation Loss: {validation_loss:.6f}
+                '''
+            )
 
             if epoch in config['persistence']['save_epochs']:
                 # Save model if epoch is specified to be saved
@@ -431,10 +368,10 @@ if __name__ == '__main__':
 
         oof_targets = []
         oof_predictions = []
+        oof_mean_predictions = []
 
         global_scores = []
         target_scores = []
-        columns_to_overwrite = []
 
         # Set model, device and seed for reproducible results
         torch_utilities.set_seed(config['training']['random_state'], deterministic_cudnn=config['training']['deterministic_cudnn'])
@@ -455,13 +392,6 @@ if __name__ == '__main__':
             validation_mask = folds[:, fold] == 1
             validation_idx = file_idx[validation_mask]
 
-            # Create inputs and targets paths
-            validation_feature_paths, validation_target_paths = torch_datasets.prepare_file_paths(
-                idx=validation_idx,
-                features_path=settings.DATA / 'datasets' / 'numpy_arrays' / 'training_features',
-                targets_path=settings.DATA / 'datasets' / 'numpy_arrays' / 'training_targets',
-            )
-
             settings.logger.info(
                 f'''
                 Validation Folds: {fold} {validation_idx.shape[0]} ({validation_idx.shape[0] // config["training"]["test_batch_size"] + 1} steps)
@@ -469,13 +399,9 @@ if __name__ == '__main__':
             )
 
             # Create validation dataset and dataloaders
-            validation_dataset = torch_datasets.TabularDataset(
-                feature_paths=validation_feature_paths,
-                target_paths=validation_target_paths,
-                feature_statistics=feature_statistics,
-                target_statistics=target_statistics,
-                feature_normalization_type=feature_normalization_type,
-                target_normalization_type=target_normalization_type
+            validation_dataset = torch_datasets.TabularInMemoryDataset(
+                features=features[validation_idx],
+                targets=targets[validation_idx]
             )
             validation_loader = DataLoader(
                 validation_dataset,
@@ -489,10 +415,10 @@ if __name__ == '__main__':
             validation_targets = []
             validation_predictions = []
 
-            for inputs, targets in tqdm(validation_loader):
+            for inputs, targets_ in tqdm(validation_loader):
 
                 inputs = inputs.to(device)
-                targets = targets.to(device)
+                targets_ = targets_.to(device)
 
                 with torch.no_grad():
                     if amp:
@@ -501,60 +427,76 @@ if __name__ == '__main__':
                     else:
                         outputs = model(inputs)
 
-                validation_targets.append(targets.cpu())
+                validation_targets.append(targets_.cpu())
                 validation_predictions.append(outputs.detach().cpu())
 
             validation_targets = torch.cat(validation_targets, dim=0).float().numpy()
             validation_predictions = torch.cat(validation_predictions, dim=0).numpy()
 
             # Rescale validation targets and predictions back to their normal scales
-            validation_targets = (validation_targets * target_stds) + target_means
-            validation_predictions = (validation_predictions * target_stds) + target_means
+            validation_targets *= statistics['target']['rms']
+            validation_targets += statistics['target']['mean']
+            validation_predictions *= statistics['target']['rms']
+            validation_predictions += statistics['target']['mean']
+
+            q0002_replace_idx = [
+                120, 121, 122, 123, 124, 125, 126, 127, 128,
+                129, 130, 131, 132, 133, 134, 135, 136, 137,
+                138, 139, 140, 141, 142, 143, 144, 145, 146
+            ]
+            q0002_replace_features = features[validation_idx][:, q0002_replace_idx]
+            q0002_replace_features *= statistics['feature']['std'][q0002_replace_idx]
+            q0002_replace_features += statistics['feature']['mean'][q0002_replace_idx]
+
+            validation_predictions[:, q0002_replace_idx] = -q0002_replace_features / 1200
+            for target_idx in np.arange(len(target_columns)):
+                validation_predictions[:, target_idx] = np.clip(
+                    validation_predictions[:, target_idx],
+                    a_min=statistics['target']['min'][target_idx],
+                    a_max=statistics['target']['max'][target_idx],
+                )
 
             # Calculate validation scores with model predictions
             global_validation_scores, target_validation_scores = metrics.regression_scores(
                 y_true=validation_targets,
-                y_pred=validation_predictions
+                y_pred=validation_predictions,
+                weights=statistics['target']['weight'],
+                target_columns=target_columns
             )
-            target_validation_scores.index = target_columns
 
             # Calculate validation scores with mean predictions
-            validation_mean_predictions = np.repeat(target_means.reshape(1, -1), validation_targets.shape[0], axis=0)
+            validation_mean_predictions = np.repeat(statistics['target']['mean'].reshape(1, -1), validation_targets.shape[0], axis=0)
+            validation_mean_predictions[:, q0002_replace_idx] = -q0002_replace_features / 1200
             mean_global_validation_scores, mean_target_validation_scores = metrics.regression_scores(
                 y_true=validation_targets,
-                y_pred=validation_mean_predictions
+                y_pred=validation_mean_predictions,
+                weights=statistics['target']['weight'],
+                target_columns=target_columns
             )
-            mean_target_validation_scores.index = target_columns
 
-            # Replace columns on which the performance of mean prediction is better than model's prediction
-            target_overwrite_idx = np.where(mean_target_validation_scores['r2_score'] > target_validation_scores['r2_score'])[0]
-            validation_columns_to_overwrite = np.array(target_columns)[target_overwrite_idx]
-            validation_predictions[:, target_overwrite_idx] = validation_mean_predictions[:, target_overwrite_idx]
-            global_overwritten_validation_scores, target_overwritten_validation_scores = metrics.regression_scores(
-                y_true=validation_targets,
-                y_pred=validation_predictions
-            )
-            target_overwritten_validation_scores.index = target_columns
+            negative_r2_score_targets = sorted(target_validation_scores.loc[target_validation_scores['r2_score'] < 0].index.tolist())
+            target_mean_higher_score_targets = sorted(target_validation_scores.loc[mean_target_validation_scores['r2_score'] > target_validation_scores['r2_score']].index.tolist())
 
             settings.logger.info(
                 f'''
                 Fold {fold}
-                Raw Global Validation Scores: {json.dumps(global_validation_scores, indent=2)}
-                Mean Overwritten Global Validation Scores: {json.dumps(global_overwritten_validation_scores, indent=2)}
-                Overwritten Target Columns: {len(validation_columns_to_overwrite)}
-                ({validation_columns_to_overwrite})
+                Model Prediction Validation Scores: {json.dumps(global_validation_scores, indent=2)}
+                Target Mean Validation Scores: {json.dumps(mean_global_validation_scores, indent=2)}
+                Negative R2 Score Targets: {json.dumps(negative_r2_score_targets, indent=2)}
+                Target Mean R2 Score Higher Targets: {json.dumps(target_mean_higher_score_targets, indent=2)}
                 '''
             )
 
             oof_targets.append(validation_targets)
             oof_predictions.append(validation_predictions)
+            oof_mean_predictions.append(validation_mean_predictions)
 
-            global_scores.append(global_overwritten_validation_scores)
-            target_scores.append(target_overwritten_validation_scores)
-            columns_to_overwrite.append(validation_columns_to_overwrite)
+            global_scores.append(global_validation_scores)
+            target_scores.append(target_validation_scores)
 
         oof_targets = np.concatenate(oof_targets, axis=0)
         oof_predictions = np.concatenate(oof_predictions, axis=0)
+        oof_mean_predictions = np.concatenate(oof_mean_predictions, axis=0)
 
         global_scores = pd.DataFrame(global_scores)
         settings.logger.info(
@@ -566,22 +508,43 @@ if __name__ == '__main__':
             '''
         )
 
+        # Calculate OOF scores with model predictions
         global_oof_scores, target_oof_scores = metrics.regression_scores(
             y_true=oof_targets,
-            y_pred=oof_predictions
+            y_pred=oof_predictions,
+            weights=statistics['target']['weight'],
+            target_columns=target_columns
         )
-        target_oof_scores.index = target_columns
-        oof_columns_to_overwrite = sorted(list(set(chain.from_iterable(columns_to_overwrite))))
-        with open(model_directory / 'columns_to_overwrite.json', mode='w') as f:
-            json.dump(oof_columns_to_overwrite, f, indent=2, ensure_ascii=False)
-        settings.logger.info(f'Saved oof_columns_to_overwrite.json to {model_directory}')
+
+        # Calculate OOF scores with mean predictions
+        mean_global_oof_scores, mean_target_oof_scores = metrics.regression_scores(
+            y_true=oof_targets,
+            y_pred=oof_mean_predictions,
+            weights=statistics['target']['weight'],
+            target_columns=target_columns
+        )
+
+        oof_negative_r2_score_targets = sorted(target_oof_scores.loc[target_oof_scores['r2_score'] < 0].index.tolist())
+        oof_target_mean_higher_score_targets = sorted(target_oof_scores.loc[mean_target_oof_scores['r2_score'] > target_oof_scores['r2_score']].index.tolist())
+
+        if len(oof_target_mean_higher_score_targets) > 0:
+            target_overwrite_idx = [target_columns.index(column) for column in oof_target_mean_higher_score_targets]
+            # Calculate validation scores with overwritten predictions
+            oof_predictions[:, target_overwrite_idx] = statistics['target']['mean'][target_overwrite_idx]
+            global_oof_scores, target_oof_scores = metrics.regression_scores(
+                y_true=oof_targets,
+                y_pred=oof_predictions,
+                weights=statistics['target']['weight'],
+                target_columns=target_columns
+            )
 
         settings.logger.info(
             f'''
             OOF
-            Mean Overwritten Global Scores: {json.dumps(global_oof_scores, indent=2)}
-            Overwritten Target Columns: {len(oof_columns_to_overwrite)}
-            ({oof_columns_to_overwrite})
+            Model Prediction OOF Scores: {json.dumps(global_oof_scores, indent=2)}
+            Target Mean OOF Scores: {json.dumps(mean_global_oof_scores, indent=2)}
+            Negative R2 Score Targets: {json.dumps(oof_negative_r2_score_targets, indent=2)}
+            Target Mean R2 Score Higher Targets: {json.dumps(oof_target_mean_higher_score_targets, indent=2)}
             '''
         )
 
@@ -603,7 +566,7 @@ if __name__ == '__main__':
         settings.logger.info(f'global_scores.png is saved to {model_directory}')
 
         single_targets = [columns[0] for columns in target_column_groups.values() if len(columns) == 1]
-        single_target_scores = [df.loc[single_targets] for df in target_scores]
+        single_target_scores = [df.loc[single_targets, ['mse', 'mae', 'r2_score']] for df in target_scores]
         visualization.visualize_single_target_scores(
             single_target_scores=single_target_scores,
             title=f'Single Target Fold and OOF Scores of {len(folds)} Model(s)',
@@ -614,7 +577,7 @@ if __name__ == '__main__':
         vertically_resolved_targets = {name: columns for name, columns in target_column_groups.items() if len(columns) == 60}
         for target_group, columns in vertically_resolved_targets.items():
             visualization.visualize_vertically_resolved_target_scores(
-                vertically_resolved_target_scores=[df.loc[columns] for df in target_scores],
+                vertically_resolved_target_scores=[df.loc[columns, ['mse', 'mae', 'r2_score']] for df in target_scores],
                 title=f'{target_group} Fold and OOF Scores of {len(folds)} Model(s)',
                 path=model_directory / f'{target_group}_scores.png'
             )
@@ -627,8 +590,9 @@ if __name__ == '__main__':
                 visualization.visualize_predictions(
                     targets=oof_targets[:, target_column_idx],
                     predictions=oof_predictions[:, target_column_idx],
-                    scores=target_oof_scores.loc[target_column],
+                    score=target_oof_scores.loc[target_column, 'r2_score'],
                     target_column=target_column,
+                    weight=statistics['target']['weight'][target_column_idx],
                     path=predictions_visualization_directory / f'{target_column}.png'
                 )
 
@@ -636,29 +600,30 @@ if __name__ == '__main__':
         np.savez_compressed(model_directory / 'oof_predictions.npz', idx=oof_idx, predictions=oof_predictions)
         settings.logger.info(f'oof_predictions.npz is saved to {model_directory}')
 
+        with open(model_directory / 'negative_r2_score_targets.json', 'w') as f:
+            json.dump(oof_target_mean_higher_score_targets, f, indent=2, ensure_ascii=False)
+        settings.logger.info(f'negative_r2_score_targets.json is saved to {model_directory}')
+
     elif args.mode == 'submission':
 
+        test_features = pd.read_parquet(settings.DATA / 'datasets' / 'test.parquet').to_numpy()
+        test_features -= statistics['feature']['mean']
+        test_features /= statistics['feature']['std']
         test_idx = np.arange(625000)
 
-        with open(model_directory / 'columns_to_overwrite.json', mode='r') as f:
-            columns_to_overwrite = json.load(f)
+        with open(model_directory / 'negative_r2_score_targets.json', mode='r') as f:
+            negative_r2_score_targets = json.load(f)
 
         # Set model, device and seed for reproducible results
         torch_utilities.set_seed(config['training']['random_state'], deterministic_cudnn=config['training']['deterministic_cudnn'])
         device = torch.device(config['training']['device'])
         amp = config['training']['amp']
 
-        model_file_name = config['test']['model_file_name']
+        model_file_name = config['submission']['model_file_name']
         model = getattr(torch_modules, config['model']['model_class'])(**config['model']['model_args'])
         model.load_state_dict(torch.load(model_directory / model_file_name))
         model.to(device)
         model.eval()
-
-        test_feature_paths = torch_datasets.prepare_file_paths(
-            idx=test_idx,
-            features_path=settings.DATA / 'datasets' / 'numpy_arrays' / 'test_features',
-            targets_path=None,
-        )
 
         settings.logger.info(
             f'''
@@ -667,13 +632,9 @@ if __name__ == '__main__':
         )
 
         # Create test dataset and dataloaders
-        test_dataset = torch_datasets.TabularDataset(
-            feature_paths=test_feature_paths,
-            target_paths=None,
-            feature_statistics=feature_statistics,
-            target_statistics=target_statistics,
-            feature_normalization_type=feature_normalization_type,
-            target_normalization_type=target_normalization_type
+        test_dataset = torch_datasets.TabularInMemoryDataset(
+            features=test_features,
+            targets=None
         )
         test_loader = DataLoader(
             test_dataset,
@@ -702,11 +663,29 @@ if __name__ == '__main__':
         test_predictions = torch.cat(test_predictions, dim=0).numpy()
 
         # Rescale validation targets and predictions back to their normal scales
-        test_predictions = (test_predictions * target_stds) + target_means
+        test_predictions *= statistics['target']['rms']
+        test_predictions += statistics['target']['mean']
 
-        target_overwrite_idx = np.where(np.in1d(target_columns, columns_to_overwrite))[0]
-        test_predictions[:, target_overwrite_idx] = target_means[target_overwrite_idx]
+        q0002_replace_idx = [
+            120, 121, 122, 123, 124, 125, 126, 127, 128,
+            129, 130, 131, 132, 133, 134, 135, 136, 137,
+            138, 139, 140, 141, 142, 143, 144, 145, 146
+        ]
+        q0002_replace_features = test_features[:, q0002_replace_idx]
+        q0002_replace_features *= statistics['feature']['std'][q0002_replace_idx]
+        q0002_replace_features += statistics['feature']['mean'][q0002_replace_idx]
+        test_predictions[:, q0002_replace_idx] = -q0002_replace_features / 1200
+        for target_idx in np.arange(len(target_columns)):
+            test_predictions[:, target_idx] = np.clip(
+                test_predictions[:, target_idx],
+                a_min=statistics['target']['min'][target_idx],
+                a_max=statistics['target']['max'][target_idx],
+            )
+
+        if len(negative_r2_score_targets) > 0:
+            target_overwrite_idx = [target_columns.index(column) for column in negative_r2_score_targets]
+            test_predictions[:, target_overwrite_idx] = statistics['target']['mean'][target_overwrite_idx]
 
         df_submission = pd.read_parquet(settings.DATA / 'datasets' / 'sample_submission.parquet')
-        df_submission.iloc[:, 1:] = test_predictions
+        df_submission.iloc[:, 1:] *= test_predictions
         df_submission.to_parquet(model_directory / 'submission.parquet')
