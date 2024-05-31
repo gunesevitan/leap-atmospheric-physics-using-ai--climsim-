@@ -53,9 +53,19 @@ if __name__ == '__main__':
     dataset_directory = settings.DATA / 'datasets'
     dataset_directory.mkdir(parents=True, exist_ok=True)
 
-    dataset = 'sample_submission'
+    dataset = 'train'
 
     if dataset == 'train':
+
+        weight_columns = np.arange(1, 369).tolist()
+        weight_dtypes = [pl.Float32 for i in range(len(weight_columns))]
+        target_weights = pl.read_csv(
+            settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'sample_submission.csv',
+            columns=weight_columns,
+            dtypes=weight_dtypes,
+            n_rows=1,
+            n_threads=16
+        ).to_numpy().reshape(-1)
 
         columns = np.arange(1, 925).tolist()
         dtypes = [pl.Float32 for i in range(len(columns))]

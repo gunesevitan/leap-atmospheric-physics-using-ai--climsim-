@@ -1,5 +1,6 @@
 import sys
 import numpy as np
+import pandas as pd
 import polars as pl
 
 sys.path.append('..')
@@ -28,16 +29,10 @@ if __name__ == '__main__':
         with open(settings.DATA / 'target_weights.npy', 'wb') as f:
             np.save(f, target_weights)
 
-        target_columns = np.arange(557, 925).tolist()
-        target_dtypes = [pl.Float32 for i in range(len(target_columns))]
-        targets = pl.read_csv(
-            settings.DATA / 'leap-atmospheric-physics-ai-climsim' / 'train.csv',
-            columns=target_columns,
-            dtypes=target_dtypes,
-            n_threads=16
-        )
+        targets = pd.read_parquet(settings.DATA / 'datasets' / 'train.parquet')
         targets = targets.to_numpy()
-
+        targets = targets[:, -368:]
+        
         target_means = targets.mean(axis=0)
         target_stds = targets.std(axis=0)
         target_mins = targets.min(axis=0)
