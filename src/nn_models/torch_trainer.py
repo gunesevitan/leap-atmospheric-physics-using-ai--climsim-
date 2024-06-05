@@ -90,7 +90,8 @@ def train(training_loader, model, criterion, optimizer, device, scheduler=None, 
             optimizer.step()
 
         if scheduler is not None:
-            scheduler.step()
+            if scheduler.last_epoch < scheduler.total_steps:
+                scheduler.step()
 
         running_loss += loss.detach().item() * len(inputs)
         lr = scheduler.get_last_lr()[0] if scheduler is not None else optimizer.param_groups[0]['lr']
