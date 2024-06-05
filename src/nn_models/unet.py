@@ -24,7 +24,7 @@ class ConvBNActivation(nn.Module):
                 groups=groups
             ),
             nn.BatchNorm1d(num_features=out_channels),
-            nn.ReLU()
+            nn.ReLU(inplace=True)
         )
 
     def forward(self, x):
@@ -116,21 +116,29 @@ class Seq2SeqCNN(nn.Module):
 
             self.down_layers.append(nn.Sequential(*block))
 
-        self.up_layers = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv1d(
-                    in_channels=down_channels[i] + down_channels[i - 1],
-                    out_channels=down_channels[i - 1],
-                    kernel_size=3,
-                    stride=1,
-                    padding='same',
-                    bias=True
-                ),
-                nn.BatchNorm1d(down_channels[i - 1]),
-                nn.ReLU(inplace=True)
-            ) for i in range(len(down_channels) - 1, 0, -1)
+        self.up_layers = nn.ModuleList()
+        for i in range(len(down_channels) - 1, -1, -1):
 
-        ])
+            if i == len(down_channels) - 1:
+                in_channels = down_channels[i]
+                out_channels = down_channels[i - 1]
+            elif i == 0:
+                in_channels = down_channels[i] * 2
+                out_channels = down_channels[i]
+            else:
+                in_channels = down_channels[i] * 2
+                out_channels = down_channels[i - 1]
+
+            self.up_layers.append(
+                ConvBNActivation(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=1,
+                    stride=1,
+                    groups=1
+                )
+            )
+
         self.head = nn.Conv1d(in_channels=down_channels[0], out_channels=14, kernel_size=1, stride=1, padding='same')
 
     def forward(self, x):
@@ -155,13 +163,16 @@ class Seq2SeqCNN(nn.Module):
             x = x_out
             #print(f'down x {i} {x_out.shape}')
 
-        #print(f'{len(outputs)} {outputs[0].shape} {outputs[1].shape}')
+        #print(f'{len(outputs)} {[a.shape for a in outputs]}')
 
         for j, i in enumerate(range(len(self.up_layers) - 1, -1, -1)):
-            x = torch.cat((x, outputs[i]), dim=1)
-            #print(f'up cat x {x.shape}')
+
+            if i < len(self.up_layers) - 1:
+                #print(f'uplayer {j} add previous {x.shape} + outputs[{i}] {outputs[i].shape}')
+                x = torch.cat((x, outputs[i]), dim=1)
+
             x = self.up_layers[j](x)
-            #print(f'up x {i} {x.shape}')
+            #print(f'uplayer {j} shape {x.shape}')
 
         outputs = self.head(x)
         #print(f'head x {outputs.shape}')
@@ -181,9 +192,9 @@ if __name__ == '__main__':
         in_channels=25,
         stem_channels=32,
         down_channels=[32, 64, 128],
-        down_kernel_sizes=[3, 3, 3],
+        down_kernel_sizes=[5, 7, 9],
         down_strides=[1, 1, 1],
-        res_kernel_sizes=[1, 1, 1],
+        res_kernel_sizes=[3, 3, 3],
         res_se_ratios=[2, 2, 2],
         res_block_depth=1
 
