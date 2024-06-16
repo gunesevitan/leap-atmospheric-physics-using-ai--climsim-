@@ -30,6 +30,20 @@ def load_statistics(statistics_directory):
     target_maxs = np.load(statistics_directory / 'target_maxs.npy')
     target_rmss = np.load(statistics_directory / 'target_rmss.npy')
 
+    feature_means_with_levels = np.load(statistics_directory / 'feature_means_with_levels.npy')
+    feature_stds_with_levels = np.load(statistics_directory / 'feature_stds_with_levels.npy')
+
+    target_means_with_levels = np.load(statistics_directory / 'target_means_with_levels.npy')
+    target_stds_with_levels = np.load(statistics_directory / 'target_stds_with_levels.npy')
+    target_rmss_with_levels = np.load(statistics_directory / 'target_rmss_with_levels.npy')
+
+    feature_gradient_means = np.load(statistics_directory / 'feature_gradient_means.npy')
+    feature_gradient_stds = np.load(statistics_directory / 'feature_gradient_stds.npy')
+
+    target_gradient_means = np.load(statistics_directory / 'target_gradient_means.npy')
+    target_gradient_stds = np.load(statistics_directory / 'target_gradient_stds.npy')
+    target_gradient_rmss = np.load(statistics_directory / 'target_gradient_rmss.npy')
+
     normalizers = {
         'feature': {
             'mean': feature_means,
@@ -37,6 +51,10 @@ def load_statistics(statistics_directory):
             'min': feature_mins,
             'max': feature_maxs,
             'rms': feature_rmss,
+            'mean_with_levels': feature_means_with_levels,
+            'std_with_levels': feature_stds_with_levels,
+            'gradient_mean': feature_gradient_means,
+            'gradient_std': feature_gradient_stds
         },
         'target': {
             'weight': target_weights,
@@ -45,6 +63,12 @@ def load_statistics(statistics_directory):
             'min': target_mins,
             'max': target_maxs,
             'rms': target_rmss,
+            'mean_with_levels': target_means_with_levels,
+            'std_with_levels': target_stds_with_levels,
+            'rms_with_levels': target_rmss_with_levels,
+            'gradient_mean': target_gradient_means,
+            'gradient_std': target_gradient_stds,
+            'gradient_rms': target_gradient_rmss
         }
     }
 
