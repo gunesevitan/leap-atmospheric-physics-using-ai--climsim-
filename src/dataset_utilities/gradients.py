@@ -25,12 +25,16 @@ if __name__ == '__main__':
 
         means = gradients.mean(axis=0)
         stds = gradients.std(axis=0)
+        rmss = np.sqrt(np.mean(gradients ** 2, axis=0))
 
         with open(dataset_directory / 'target_gradient_means.npy', 'wb') as f:
             np.save(f, means)
 
         with open(dataset_directory / 'target_gradient_stds.npy', 'wb') as f:
             np.save(f, stds)
+
+        with open(dataset_directory / 'target_gradient_rmss.npy', 'wb') as f:
+            np.save(f, rmss)
 
     elif normalization_columns == 'features':
 
