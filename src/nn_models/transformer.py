@@ -1,9 +1,6 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-import heads
 
 
 def positional_encoding(length, embed_dim):
@@ -80,80 +77,25 @@ class Transformer(nn.Module):
         ])
 
         self.positional_embeddings = torch.nn.Parameter(positional_encoding(seq_len, embed_dim))
-        self.cls_token = nn.Parameter(torch.zeros((1, embed_dim)))
 
         self.pooling_type = pooling_type
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
-        self.head = heads.MultiOutputHead(input_dim=embed_dim)
+        self.head = nn.Linear(embed_dim, 14)
 
     def forward(self, x):
-
-        x = torch.cat((
-            x[:, :360].view(x.shape[0], -1, 60),
-            torch.unsqueeze(x[:, 360:376], dim=-1).repeat(repeats=(1, 1, 60)),
-            x[:, 376:].view(x.shape[0], -1, 60),
-        ), dim=1)
 
         x = x.permute(0, 2, 1)
         x = self.stem(x)
 
-        # Add positional embeddings and concatenate cls token
         x += self.positional_embeddings
-        x = torch.cat([
-            self.cls_token.unsqueeze(0).repeat(x.size(0), 1, 1),
-            x
-        ], 1)
 
-        # Pass it to transformer encoder
         for block in self.encoder:
             x = block(x)
 
-        if self.pooling_type == 'avg':
-            x = torch.mean(x[:, 1:, :], dim=1)
-        elif self.pooling_type == 'max':
-            x = torch.max(x[:, 1:, :], dim=1)[0]
-        elif self.pooling_type == 'cls':
-            x = x[:, 0, :]
-
-        x = self.dropout(x)
-        outputs = self.head(x)
-        outputs = torch.cat(outputs, dim=1)
+        outputs = self.head(x).permute(0, 2, 1)
+        outputs = torch.cat((
+            outputs[:, :6, :].reshape(-1, 360),
+            outputs[:, 6:, :].mean(dim=-1)
+        ), dim=-1)
 
         return outputs
-
-
-if __name__ == '__main__':
-
-    import pandas as pd
-
-
-    features = np.random.rand(1024, 556)
-    targets = np.random.rand(1024, 368)
-
-    #features = np.concatenate([
-    #    features[:, :360].reshape(features.shape[0], -1, 60),
-    #    np.repeat(np.expand_dims(features[:, 360:376], axis=-1), repeats=60, axis=-1),
-    #    features[:, 376:].reshape(features.shape[0], -1, 60),
-    #], axis=1)
-
-    import torch_datasets
-    d = torch_datasets.TabularInMemoryDataset(features, targets)
-
-    from torch.utils.data import DataLoader
-    l = DataLoader(dataset=d, batch_size=4)
-    m = Transformer(
-        input_dim=25,
-        seq_len=60,
-        embed_dim=256,
-
-        num_heads=8,
-        num_blocks=2,
-        pooling_type='avg',
-        dropout_rate=0.1,
-    )
-
-    for x, y in l:
-
-        yy = m(x)
-        exit()
-
