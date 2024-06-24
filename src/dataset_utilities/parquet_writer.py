@@ -53,7 +53,7 @@ if __name__ == '__main__':
     dataset_directory = settings.DATA / 'datasets'
     dataset_directory.mkdir(parents=True, exist_ok=True)
 
-    dataset = 'train'
+    dataset = 'test'
 
     if dataset == 'train':
 
