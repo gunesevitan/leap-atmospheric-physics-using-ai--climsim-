@@ -32,9 +32,7 @@ def create_folds(df, n_splits, shuffle=True, random_state=42):
 
     kf = KFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
     for fold, (training_idx, validation_idx) in enumerate(kf.split(X=df), 1):
-        df.loc[training_idx, f'fold{fold}'] = 0
-        df.loc[validation_idx, f'fold{fold}'] = 1
-        df[f'fold{fold}'] = df[f'fold{fold}'].astype(np.uint8)
+        df[validation_idx] = fold
 
     return df
 
@@ -55,3 +53,9 @@ if __name__ == '__main__':
         np.savez_compressed(f, folds)
 
     settings.logger.info(f'folds.npy is saved to {settings.DATA}')
+
+    folds2 = np.zeros(10091520, dtype=np.uint8)
+    folds2 = create_folds(folds2, n_splits=5, shuffle=True, random_state=42)
+
+    with open(settings.DATA / 'folds2.npy', 'wb') as f:
+        np.save(f, folds2)
