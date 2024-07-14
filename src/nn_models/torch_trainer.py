@@ -22,7 +22,7 @@ import metrics
 import visualization
 
 
-def train(training_loader, model, criterion, optimizer, device, scheduler=None, amp=False):
+def train(training_loader, model, criterion, optimizer, device, scheduler=None, amp=False, statistics=None):
 
     """
     Train given model on given data loader
@@ -56,6 +56,9 @@ def train(training_loader, model, criterion, optimizer, device, scheduler=None, 
         Training loss after model is fully trained on training set data loader
     """
 
+    Ak = torch.as_tensor([5.59e-05, 0.0001008, 0.0001814, 0.0003244, 0.0005741, 0.0009986, 0.0016961, 0.0027935, 0.0044394, 0.0067923, 0.0100142, 0.0142748, 0.0197589, 0.0266627, 0.035166, 0.0453892, 0.0573601, 0.0710184, 0.086261, 0.1029992, 0.1211833, 0.1407723, 0.1616703, 0.181999, 0.1769112, 0.1717129, 0.1664573, 0.1611637, 0.1558164, 0.1503775, 0.144805, 0.1390666, 0.1331448, 0.1270342, 0.1207383, 0.11427, 0.107658, 0.1009552, 0.0942421, 0.0876184, 0.0811846, 0.0750186, 0.0691602, 0.06361, 0.0583443, 0.0533368, 0.0485757, 0.044067, 0.039826, 0.0358611, 0.0321606, 0.0286887, 0.0253918, 0.0222097, 0.0190872, 0.0159809, 0.0128614, 0.0097109, 0.00652, 0.0032838], device='cuda')
+    Bk = torch.as_tensor([0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0016785, 0.0295868, 0.058101, 0.0869295, 0.1159665, 0.145298, 0.1751322, 0.2056993, 0.2371761, 0.2696592, 0.3031777, 0.3377127, 0.3731935, 0.4094624, 0.4462289, 0.4830525, 0.5193855, 0.5546772, 0.5884994, 0.6206347, 0.6510795, 0.6799635, 0.7074307, 0.7335472, 0.7582786, 0.7815416, 0.8032905, 0.8235891, 0.8426334, 0.8607178, 0.8781726, 0.8953009, 0.9123399, 0.9294513, 0.9467325, 0.9642358, 0.9819873], device='cuda')
+
     model.train()
     progress_bar = tqdm(training_loader)
 
@@ -70,6 +73,47 @@ def train(training_loader, model, criterion, optimizer, device, scheduler=None, 
 
         inputs = inputs.to(device)
         targets = targets.to(device)
+
+        sequential_inputs = torch.cat((
+            inputs[:, :360].view(inputs.shape[0], -1, 60),
+            inputs[:, 376:].view(inputs.shape[0], -1, 60)
+        ), dim=1)
+        scalar_inputs = inputs[:, 360:376]
+
+        wind_speed = torch.sqrt(sequential_inputs[:, 4, :] ** 2 + sequential_inputs[:, 5, :] ** 2)
+        wind_direction = (torch.rad2deg(torch.arctan2(sequential_inputs[:, 4, :], sequential_inputs[:, 5, :])) + 180) % 360
+
+        temperature = sequential_inputs[:, 0, :].clip(165, 321)
+        pressure = Ak + Bk * scalar_inputs[:, 0].view(-1, 1) / 100000.0
+        relative_humidity = sequential_inputs[:, 1, :] * 263 * pressure
+        relative_humidity = relative_humidity * torch.exp(-17.67 * (temperature - 273.16) / (temperature - 29.65))
+
+        sequential_inputs = torch.cat((
+            sequential_inputs,
+            wind_speed.view(-1, 1, 60),
+            wind_direction.view(-1, 1, 60),
+            relative_humidity.view(-1, 1, 60),
+        ), dim=1)
+
+        sequential_inputs_gradients = sequential_inputs.diff(n=1, dim=2, prepend=sequential_inputs[:, :, :1])
+
+        sequential_inputs -= statistics['feature']['sequential_mean']
+        sequential_inputs /= statistics['feature']['sequential_std']
+
+        sequential_inputs_gradients -= statistics['feature']['gradient_mean']
+        sequential_inputs_gradients /= statistics['feature']['gradient_std']
+
+        scalar_inputs -= statistics['feature']['scalar_mean']
+        scalar_inputs /= statistics['feature']['scalar_std']
+
+        inputs = torch.cat((
+            sequential_inputs,
+            torch.unsqueeze(scalar_inputs, dim=-1).repeat(repeats=(1, 1, 60)),
+            sequential_inputs_gradients
+        ), dim=1)
+
+        targets -= statistics['target']['mean']
+        targets /= statistics['target']['rms']
 
         optimizer.zero_grad()
 
@@ -102,7 +146,7 @@ def train(training_loader, model, criterion, optimizer, device, scheduler=None, 
     return training_loss
 
 
-def validate(validation_loader, model, criterion, device, amp=False):
+def validate(validation_loader, model, criterion, device, amp=False, statistics=None):
 
     """
     Validate given model on given data loader
@@ -136,6 +180,9 @@ def validate(validation_loader, model, criterion, device, amp=False):
         Validation predictions
     """
 
+    Ak = torch.as_tensor([5.59e-05, 0.0001008, 0.0001814, 0.0003244, 0.0005741, 0.0009986, 0.0016961, 0.0027935, 0.0044394, 0.0067923, 0.0100142, 0.0142748, 0.0197589, 0.0266627, 0.035166, 0.0453892, 0.0573601, 0.0710184, 0.086261, 0.1029992, 0.1211833, 0.1407723, 0.1616703, 0.181999, 0.1769112, 0.1717129, 0.1664573, 0.1611637, 0.1558164, 0.1503775, 0.144805, 0.1390666, 0.1331448, 0.1270342, 0.1207383, 0.11427, 0.107658, 0.1009552, 0.0942421, 0.0876184, 0.0811846, 0.0750186, 0.0691602, 0.06361, 0.0583443, 0.0533368, 0.0485757, 0.044067, 0.039826, 0.0358611, 0.0321606, 0.0286887, 0.0253918, 0.0222097, 0.0190872, 0.0159809, 0.0128614, 0.0097109, 0.00652, 0.0032838], device='cuda')
+    Bk = torch.as_tensor([0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0016785, 0.0295868, 0.058101, 0.0869295, 0.1159665, 0.145298, 0.1751322, 0.2056993, 0.2371761, 0.2696592, 0.3031777, 0.3377127, 0.3731935, 0.4094624, 0.4462289, 0.4830525, 0.5193855, 0.5546772, 0.5884994, 0.6206347, 0.6510795, 0.6799635, 0.7074307, 0.7335472, 0.7582786, 0.7815416, 0.8032905, 0.8235891, 0.8426334, 0.8607178, 0.8781726, 0.8953009, 0.9123399, 0.9294513, 0.9467325, 0.9642358, 0.9819873], device='cuda')
+
     model.eval()
     progress_bar = tqdm(validation_loader)
 
@@ -147,6 +194,44 @@ def validate(validation_loader, model, criterion, device, amp=False):
 
         inputs = inputs.to(device)
         targets = targets.to(device)
+
+        sequential_inputs = torch.cat((
+            inputs[:, :360].view(inputs.shape[0], -1, 60),
+            inputs[:, 376:].view(inputs.shape[0], -1, 60)
+        ), dim=1)
+        scalar_inputs = inputs[:, 360:376]
+
+        wind_speed = torch.sqrt(sequential_inputs[:, 4, :] ** 2 + sequential_inputs[:, 5, :] ** 2)
+        wind_direction = (torch.rad2deg(torch.arctan2(sequential_inputs[:, 4, :], sequential_inputs[:, 5, :])) + 180) % 360
+
+        temperature = sequential_inputs[:, 0, :].clip(165, 321)
+        pressure = Ak + Bk * scalar_inputs[:, 0].view(-1, 1) / 100000.0
+        relative_humidity = sequential_inputs[:, 1, :] * 263 * pressure
+        relative_humidity = relative_humidity * torch.exp(-17.67 * (temperature - 273.16) / (temperature - 29.65))
+
+        sequential_inputs = torch.cat((
+            sequential_inputs,
+            wind_speed.view(-1, 1, 60),
+            wind_direction.view(-1, 1, 60),
+            relative_humidity.view(-1, 1, 60),
+        ), dim=1)
+        sequential_inputs_gradients = sequential_inputs.diff(n=1, dim=2, prepend=sequential_inputs[:, :, :1])
+
+        sequential_inputs -= statistics['feature']['sequential_mean']
+        sequential_inputs /= statistics['feature']['sequential_std']
+        sequential_inputs_gradients -= statistics['feature']['gradient_mean']
+        sequential_inputs_gradients /= statistics['feature']['gradient_std']
+        scalar_inputs -= statistics['feature']['scalar_mean']
+        scalar_inputs /= statistics['feature']['scalar_std']
+
+        inputs = torch.cat((
+            sequential_inputs,
+            torch.unsqueeze(scalar_inputs, dim=-1).repeat(repeats=(1, 1, 60)),
+            sequential_inputs_gradients
+        ), dim=1)
+
+        targets -= statistics['target']['mean']
+        targets /= statistics['target']['rms']
 
         with torch.no_grad():
             if amp:
@@ -201,11 +286,27 @@ if __name__ == '__main__':
     statistics = preprocessing.load_statistics(statistics_directory=settings.DATA / 'datasets')
     statistics['feature']['std'] = np.where(statistics['feature']['std'] <= 1e-9, 1.0, statistics['feature']['std'])
     statistics['target']['rms'] = np.where(statistics['target']['rms'] == 0, 1.0, statistics['target']['rms'])
+    statistics['feature']['gradient_std'] = np.where(statistics['feature']['gradient_std'] <= 1e-9, 1.0, statistics['feature']['gradient_std'])
 
-    features -= statistics['feature']['mean']
-    features /= statistics['feature']['std']
-    targets -= statistics['target']['mean']
-    targets /= statistics['target']['rms']
+    statistics['feature']['mean'] = torch.as_tensor(statistics['feature']['mean'], dtype=torch.float, device='cuda')
+    statistics['feature']['sequential_mean'] = torch.cat((
+        statistics['feature']['mean'][:360].view(-1, 60),
+        statistics['feature']['mean'][376:].view(-1, 60)
+    ), dim=0)
+    statistics['feature']['scalar_mean'] = statistics['feature']['mean'][360:376]
+
+    statistics['feature']['std'] = torch.as_tensor(statistics['feature']['std'], dtype=torch.float, device='cuda')
+    statistics['feature']['sequential_std'] = torch.cat((
+        statistics['feature']['std'][:360].view(-1, 60),
+        statistics['feature']['std'][376:].view(-1, 60)
+    ), dim=0)
+    statistics['feature']['scalar_std'] = statistics['feature']['std'][360:376]
+
+    statistics['feature']['gradient_mean'] = torch.as_tensor(statistics['feature']['gradient_mean'], dtype=torch.float, device='cuda').view(-1, 60)
+    statistics['feature']['gradient_std'] = torch.as_tensor(statistics['feature']['gradient_std'], dtype=torch.float, device='cuda').view(-1, 60)
+
+    statistics['target']['mean'] = torch.as_tensor(statistics['target']['mean'], dtype=torch.float, device='cuda')
+    statistics['target']['rms'] = torch.as_tensor(statistics['target']['rms'], dtype=torch.float, device='cuda')
 
     torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -287,7 +388,8 @@ if __name__ == '__main__':
                 optimizer=optimizer,
                 device=device,
                 scheduler=scheduler,
-                amp=amp
+                amp=amp,
+                statistics=statistics
             )
 
             validation_loss, validation_targets, validation_predictions = validate(
@@ -295,17 +397,20 @@ if __name__ == '__main__':
                 model=model,
                 criterion=criterion,
                 device=device,
-                amp=amp
+                amp=amp,
+                statistics=statistics
             )
 
             training_results = {'loss': training_loss}
             validation_results = {'loss': validation_loss}
+            global_validation_scores = None
 
             settings.logger.info(
                 f'''
                 Epoch {epoch}
                 Training Loss: {training_loss:.6f}
                 Validation Loss: {validation_loss:.6f}
+                Validation Scores: {global_validation_scores}
                 '''
             )
 
@@ -387,6 +492,9 @@ if __name__ == '__main__':
 
         test_folds = config['test']['folds']
 
+        Ak = torch.as_tensor([5.59e-05, 0.0001008, 0.0001814, 0.0003244, 0.0005741, 0.0009986, 0.0016961, 0.0027935, 0.0044394, 0.0067923, 0.0100142, 0.0142748, 0.0197589, 0.0266627, 0.035166, 0.0453892, 0.0573601, 0.0710184, 0.086261, 0.1029992, 0.1211833, 0.1407723, 0.1616703, 0.181999, 0.1769112, 0.1717129, 0.1664573, 0.1611637, 0.1558164, 0.1503775, 0.144805, 0.1390666, 0.1331448, 0.1270342, 0.1207383, 0.11427, 0.107658, 0.1009552, 0.0942421, 0.0876184, 0.0811846, 0.0750186, 0.0691602, 0.06361, 0.0583443, 0.0533368, 0.0485757, 0.044067, 0.039826, 0.0358611, 0.0321606, 0.0286887, 0.0253918, 0.0222097, 0.0190872, 0.0159809, 0.0128614, 0.0097109, 0.00652, 0.0032838], device='cuda')
+        Bk = torch.as_tensor([0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0016785, 0.0295868, 0.058101, 0.0869295, 0.1159665, 0.145298, 0.1751322, 0.2056993, 0.2371761, 0.2696592, 0.3031777, 0.3377127, 0.3731935, 0.4094624, 0.4462289, 0.4830525, 0.5193855, 0.5546772, 0.5884994, 0.6206347, 0.6510795, 0.6799635, 0.7074307, 0.7335472, 0.7582786, 0.7815416, 0.8032905, 0.8235891, 0.8426334, 0.8607178, 0.8781726, 0.8953009, 0.9123399, 0.9294513, 0.9467325, 0.9642358, 0.9819873], device='cuda')
+
         for fold in test_folds:
 
             # Create validation indices
@@ -421,6 +529,44 @@ if __name__ == '__main__':
                 inputs = inputs.to(device)
                 targets_ = targets_.to(device)
 
+                sequential_inputs = torch.cat((
+                    inputs[:, :360].view(inputs.shape[0], -1, 60),
+                    inputs[:, 376:].view(inputs.shape[0], -1, 60)
+                ), dim=1)
+                scalar_inputs = inputs[:, 360:376]
+
+                wind_speed = torch.sqrt(sequential_inputs[:, 4, :] ** 2 + sequential_inputs[:, 5, :] ** 2)
+                wind_direction = (torch.rad2deg(torch.arctan2(sequential_inputs[:, 4, :], sequential_inputs[:, 5, :])) + 180) % 360
+
+                temperature = sequential_inputs[:, 0, :].clip(165, 321)
+                pressure = Ak + Bk * scalar_inputs[:, 0].view(-1, 1) / 100000.0
+                relative_humidity = sequential_inputs[:, 1, :] * 263 * pressure
+                relative_humidity = relative_humidity * torch.exp(-17.67 * (temperature - 273.16) / (temperature - 29.65))
+
+                sequential_inputs = torch.cat((
+                    sequential_inputs,
+                    wind_speed.view(-1, 1, 60),
+                    wind_direction.view(-1, 1, 60),
+                    relative_humidity.view(-1, 1, 60),
+                ), dim=1)
+                sequential_inputs_gradients = sequential_inputs.diff(n=1, dim=2, prepend=sequential_inputs[:, :, :1])
+
+                sequential_inputs -= statistics['feature']['sequential_mean']
+                sequential_inputs /= statistics['feature']['sequential_std']
+                sequential_inputs_gradients -= statistics['feature']['gradient_mean']
+                sequential_inputs_gradients /= statistics['feature']['gradient_std']
+                scalar_inputs -= statistics['feature']['scalar_mean']
+                scalar_inputs /= statistics['feature']['scalar_std']
+
+                inputs = torch.cat((
+                    sequential_inputs,
+                    torch.unsqueeze(scalar_inputs, dim=-1).repeat(repeats=(1, 1, 60)),
+                    sequential_inputs_gradients
+                ), dim=1)
+
+                targets_ -= statistics['target']['mean']
+                targets_ /= statistics['target']['rms']
+
                 with torch.no_grad():
                     if amp:
                         with torch.autocast(device_type=device.type):
@@ -434,6 +580,11 @@ if __name__ == '__main__':
             validation_targets = torch.cat(validation_targets, dim=0).float().numpy()
             validation_predictions = torch.cat(validation_predictions, dim=0).numpy()
 
+            statistics['feature']['mean'] = statistics['feature']['mean'].cpu().numpy()
+            statistics['feature']['std'] = statistics['feature']['std'].cpu().numpy()
+            statistics['target']['mean'] = statistics['target']['mean'].cpu().numpy()
+            statistics['target']['rms'] = statistics['target']['rms'].cpu().numpy()
+
             # Rescale validation targets and predictions back to their normal scales
             validation_targets *= statistics['target']['rms']
             validation_targets += statistics['target']['mean']
@@ -446,10 +597,8 @@ if __name__ == '__main__':
                 138, 139, 140, 141, 142, 143, 144, 145, 146
             ]
             q0002_replace_features = features[validation_idx][:, q0002_replace_idx]
-            q0002_replace_features *= statistics['feature']['std'][q0002_replace_idx]
-            q0002_replace_features += statistics['feature']['mean'][q0002_replace_idx]
-
             validation_predictions[:, q0002_replace_idx] = -q0002_replace_features / 1200
+
             for target_idx in np.arange(len(target_columns)):
                 validation_predictions[:, target_idx] = np.clip(
                     validation_predictions[:, target_idx],
@@ -465,39 +614,21 @@ if __name__ == '__main__':
                 target_columns=target_columns
             )
 
-            # Calculate validation scores with mean predictions
-            validation_mean_predictions = np.repeat(statistics['target']['mean'].reshape(1, -1), validation_targets.shape[0], axis=0)
-            validation_mean_predictions[:, q0002_replace_idx] = -q0002_replace_features / 1200
-            mean_global_validation_scores, mean_target_validation_scores = metrics.regression_scores(
-                y_true=validation_targets,
-                y_pred=validation_mean_predictions,
-                weights=statistics['target']['weight'],
-                target_columns=target_columns
-            )
-
-            negative_r2_score_targets = sorted(target_validation_scores.loc[target_validation_scores['r2_score'] < 0].index.tolist())
-            target_mean_higher_score_targets = sorted(target_validation_scores.loc[mean_target_validation_scores['r2_score'] > target_validation_scores['r2_score']].index.tolist())
-
             settings.logger.info(
                 f'''
                 Fold {fold}
                 Model Prediction Validation Scores: {json.dumps(global_validation_scores, indent=2)}
-                Target Mean Validation Scores: {json.dumps(mean_global_validation_scores, indent=2)}
-                Negative R2 Score Targets: {json.dumps(negative_r2_score_targets, indent=2)}
-                Target Mean R2 Score Higher Targets: {json.dumps(target_mean_higher_score_targets, indent=2)}
                 '''
             )
 
             oof_targets.append(validation_targets)
             oof_predictions.append(validation_predictions)
-            oof_mean_predictions.append(validation_mean_predictions)
 
             global_scores.append(global_validation_scores)
             target_scores.append(target_validation_scores)
 
         oof_targets = np.concatenate(oof_targets, axis=0)
         oof_predictions = np.concatenate(oof_predictions, axis=0)
-        oof_mean_predictions = np.concatenate(oof_mean_predictions, axis=0)
 
         global_scores = pd.DataFrame(global_scores)
         settings.logger.info(
@@ -517,35 +648,10 @@ if __name__ == '__main__':
             target_columns=target_columns
         )
 
-        # Calculate OOF scores with mean predictions
-        mean_global_oof_scores, mean_target_oof_scores = metrics.regression_scores(
-            y_true=oof_targets,
-            y_pred=oof_mean_predictions,
-            weights=statistics['target']['weight'],
-            target_columns=target_columns
-        )
-
-        oof_negative_r2_score_targets = sorted(target_oof_scores.loc[target_oof_scores['r2_score'] < 0].index.tolist())
-        oof_target_mean_higher_score_targets = sorted(target_oof_scores.loc[mean_target_oof_scores['r2_score'] > target_oof_scores['r2_score']].index.tolist())
-
-        if len(oof_target_mean_higher_score_targets) > 0:
-            target_overwrite_idx = [target_columns.index(column) for column in oof_target_mean_higher_score_targets]
-            # Calculate validation scores with overwritten predictions
-            oof_predictions[:, target_overwrite_idx] = statistics['target']['mean'][target_overwrite_idx]
-            global_oof_scores, target_oof_scores = metrics.regression_scores(
-                y_true=oof_targets,
-                y_pred=oof_predictions,
-                weights=statistics['target']['weight'],
-                target_columns=target_columns
-            )
-
         settings.logger.info(
             f'''
             OOF
             Model Prediction OOF Scores: {json.dumps(global_oof_scores, indent=2)}
-            Target Mean OOF Scores: {json.dumps(mean_global_oof_scores, indent=2)}
-            Negative R2 Score Targets: {json.dumps(oof_negative_r2_score_targets, indent=2)}
-            Target Mean R2 Score Higher Targets: {json.dumps(oof_target_mean_higher_score_targets, indent=2)}
             '''
         )
 
@@ -601,19 +707,10 @@ if __name__ == '__main__':
         np.savez_compressed(model_directory / 'oof_predictions.npz', idx=oof_idx, predictions=oof_predictions)
         settings.logger.info(f'oof_predictions.npz is saved to {model_directory}')
 
-        with open(model_directory / 'negative_r2_score_targets.json', 'w') as f:
-            json.dump(oof_target_mean_higher_score_targets, f, indent=2, ensure_ascii=False)
-        settings.logger.info(f'negative_r2_score_targets.json is saved to {model_directory}')
-
     elif args.mode == 'submission':
 
         test_features = pd.read_parquet(settings.DATA / 'datasets' / 'test.parquet').to_numpy()
-        test_features -= statistics['feature']['mean']
-        test_features /= statistics['feature']['std']
         test_idx = np.arange(625000)
-
-        with open(model_directory / 'negative_r2_score_targets.json', mode='r') as f:
-            negative_r2_score_targets = json.load(f)
 
         # Set model, device and seed for reproducible results
         torch_utilities.set_seed(config['training']['random_state'], deterministic_cudnn=config['training']['deterministic_cudnn'])
@@ -648,9 +745,47 @@ if __name__ == '__main__':
 
         test_predictions = []
 
+        Ak = torch.as_tensor([5.59e-05, 0.0001008, 0.0001814, 0.0003244, 0.0005741, 0.0009986, 0.0016961, 0.0027935, 0.0044394, 0.0067923, 0.0100142, 0.0142748, 0.0197589, 0.0266627, 0.035166, 0.0453892, 0.0573601, 0.0710184, 0.086261, 0.1029992, 0.1211833, 0.1407723, 0.1616703, 0.181999, 0.1769112, 0.1717129, 0.1664573, 0.1611637, 0.1558164, 0.1503775, 0.144805, 0.1390666, 0.1331448, 0.1270342, 0.1207383, 0.11427, 0.107658, 0.1009552, 0.0942421, 0.0876184, 0.0811846, 0.0750186, 0.0691602, 0.06361, 0.0583443, 0.0533368, 0.0485757, 0.044067, 0.039826, 0.0358611, 0.0321606, 0.0286887, 0.0253918, 0.0222097, 0.0190872, 0.0159809, 0.0128614, 0.0097109, 0.00652, 0.0032838], device='cuda')
+        Bk = torch.as_tensor([0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0016785, 0.0295868, 0.058101, 0.0869295, 0.1159665, 0.145298, 0.1751322, 0.2056993, 0.2371761, 0.2696592, 0.3031777, 0.3377127, 0.3731935, 0.4094624, 0.4462289, 0.4830525, 0.5193855, 0.5546772, 0.5884994, 0.6206347, 0.6510795, 0.6799635, 0.7074307, 0.7335472, 0.7582786, 0.7815416, 0.8032905, 0.8235891, 0.8426334, 0.8607178, 0.8781726, 0.8953009, 0.9123399, 0.9294513, 0.9467325, 0.9642358, 0.9819873], device='cuda')
+
         for inputs in tqdm(test_loader):
 
             inputs = inputs.to(device)
+
+            sequential_inputs = torch.cat((
+                inputs[:, :360].view(inputs.shape[0], -1, 60),
+                inputs[:, 376:].view(inputs.shape[0], -1, 60)
+            ), dim=1)
+            scalar_inputs = inputs[:, 360:376]
+
+            wind_speed = torch.sqrt(sequential_inputs[:, 4, :] ** 2 + sequential_inputs[:, 5, :] ** 2)
+            wind_direction = (torch.rad2deg(torch.arctan2(sequential_inputs[:, 4, :], sequential_inputs[:, 5, :])) + 180) % 360
+
+            temperature = sequential_inputs[:, 0, :].clip(165, 321)
+            pressure = Ak + Bk * scalar_inputs[:, 0].view(-1, 1) / 100000.0
+            relative_humidity = sequential_inputs[:, 1, :] * 263 * pressure
+            relative_humidity = relative_humidity * torch.exp(-17.67 * (temperature - 273.16) / (temperature - 29.65))
+
+            sequential_inputs = torch.cat((
+                sequential_inputs,
+                wind_speed.view(-1, 1, 60),
+                wind_direction.view(-1, 1, 60),
+                relative_humidity.view(-1, 1, 60),
+            ), dim=1)
+            sequential_inputs_gradients = sequential_inputs.diff(n=1, dim=2, prepend=sequential_inputs[:, :, :1])
+
+            sequential_inputs -= statistics['feature']['sequential_mean']
+            sequential_inputs /= statistics['feature']['sequential_std']
+            sequential_inputs_gradients -= statistics['feature']['gradient_mean']
+            sequential_inputs_gradients /= statistics['feature']['gradient_std']
+            scalar_inputs -= statistics['feature']['scalar_mean']
+            scalar_inputs /= statistics['feature']['scalar_std']
+
+            inputs = torch.cat((
+                sequential_inputs,
+                torch.unsqueeze(scalar_inputs, dim=-1).repeat(repeats=(1, 1, 60)),
+                sequential_inputs_gradients
+            ), dim=1)
 
             with torch.no_grad():
                 if amp:
@@ -664,6 +799,9 @@ if __name__ == '__main__':
         test_predictions = torch.cat(test_predictions, dim=0).numpy()
 
         # Rescale validation targets and predictions back to their normal scales
+        statistics['target']['mean'] = statistics['target']['mean'].cpu().numpy()
+        statistics['target']['rms'] = statistics['target']['rms'].cpu().numpy()
+
         test_predictions *= statistics['target']['rms']
         test_predictions += statistics['target']['mean']
 
@@ -673,9 +811,8 @@ if __name__ == '__main__':
             138, 139, 140, 141, 142, 143, 144, 145, 146
         ]
         q0002_replace_features = test_features[:, q0002_replace_idx]
-        q0002_replace_features *= statistics['feature']['std'][q0002_replace_idx]
-        q0002_replace_features += statistics['feature']['mean'][q0002_replace_idx]
         test_predictions[:, q0002_replace_idx] = -q0002_replace_features / 1200
+
         for target_idx in np.arange(len(target_columns)):
             test_predictions[:, target_idx] = np.clip(
                 test_predictions[:, target_idx],
@@ -683,10 +820,8 @@ if __name__ == '__main__':
                 a_max=statistics['target']['max'][target_idx],
             )
 
-        if len(negative_r2_score_targets) > 0:
-            target_overwrite_idx = [target_columns.index(column) for column in negative_r2_score_targets]
-            test_predictions[:, target_overwrite_idx] = statistics['target']['mean'][target_overwrite_idx]
-
         df_submission = pd.read_parquet(settings.DATA / 'datasets' / 'sample_submission.parquet')
-        df_submission.iloc[:, 1:] *= test_predictions
+        df_submission[target_columns] = df_submission[target_columns].astype(np.float64)
+
+        df_submission.iloc[:, 1:] *= test_predictions.astype(np.float64)
         df_submission.to_parquet(model_directory / 'submission.parquet')

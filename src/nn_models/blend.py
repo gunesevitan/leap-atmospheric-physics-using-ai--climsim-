@@ -52,9 +52,9 @@ if __name__ == '__main__':
     seq2seq_seresnet_20m_oof_predictions, seq2seq_seresnet_20m_test_predictions = read_predictions('seq2seq_seresnet_20m_5f', idx=idx)
 
     gru_10m_oof_predictions, gru_10m_test_predictions = read_predictions('gru_10m_5f', idx=idx)
-    #gru_17m_oof_predictions, gru_17m_test_predictions = read_predictions('gru_17m_features')
+    gru_17m_oof_predictions, gru_17m_test_predictions = read_predictions('gru_17m_5f', idx=np.array([0]))
     lstm_10m_oof_predictions, lstm_10m_test_predictions = read_predictions('lstm_10m_5f', idx=idx)
-    #lstm_17m_oof_predictions, lstm_17m_test_predictions = read_predictions('lstm_17m_features')
+    lstm_17m_oof_predictions, lstm_17m_test_predictions = read_predictions('lstm_17m_5f', idx=idx)
 
     oof_predictions = {
         #'gru_10m': gru_10m_oof_predictions,
@@ -76,12 +76,13 @@ if __name__ == '__main__':
         )
         settings.logger.info(f'{model} OOF Scores: {json.dumps(global_oof_scores, indent=2)}')
 
-    gru_10m_weight = 0.5
-    #gru_17m_weight = 0.05
-    lstm_10m_weight = 0.5
-    #lstm_17m_weight = 0.5
+    gru_10m_weight = 0.2
+    gru_17m_weight = 0.2
+    lstm_10m_weight = 0.4
+    lstm_17m_weight = 0.4
     rnn_oof_predictions = gru_10m_oof_predictions * gru_10m_weight + \
-                          lstm_10m_oof_predictions * lstm_10m_weight
+                          lstm_10m_oof_predictions * lstm_10m_weight + \
+                          lstm_17m_oof_predictions * lstm_17m_weight
     rnn_global_oof_scores, rnn_target_oof_scores = metrics.regression_scores(
         y_true=targets,
         y_pred=rnn_oof_predictions,
@@ -148,7 +149,9 @@ if __name__ == '__main__':
 
     rnn_test_predictions = gru_10m_test_predictions.copy(deep=True)
     rnn_test_predictions.iloc[:, 1:] = gru_10m_test_predictions.iloc[:, 1:] * gru_10m_weight + \
-                                       lstm_10m_test_predictions.iloc[:, 1:] * lstm_10m_weight
+                                       gru_17m_test_predictions.iloc[:, 1:] * gru_17m_weight + \
+                                       lstm_10m_test_predictions.iloc[:, 1:] * lstm_10m_weight + \
+                                       lstm_17m_test_predictions.iloc[:, 1:] * lstm_17m_weight
 
     blend_test_predictions = unet_seresnet_test_predictions.copy(deep=True)
     blend_test_predictions.iloc[:, 1:] = unet_seresnet_test_predictions.iloc[:, 1:] * unet_seresnet_weight + \

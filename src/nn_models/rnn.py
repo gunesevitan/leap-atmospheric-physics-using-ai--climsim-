@@ -29,12 +29,6 @@ class LSTM(nn.Module):
 
     def forward(self, x):
 
-        x = torch.cat((
-            x[:, :360].view(x.shape[0], -1, 60),
-            torch.unsqueeze(x[:, 360:376], dim=-1).repeat(repeats=(1, 1, 60)),
-            x[:, 376:].view(x.shape[0], -1, 60)
-        ), dim=1)
-
         x = x.permute(0, 2, 1)
         x = self.stem(x)
 
@@ -76,12 +70,6 @@ class GRU(nn.Module):
         self.head = heads.SingleOutputHead(input_dim=gru_dim * 2 if bidirectional else gru_dim)
 
     def forward(self, x):
-
-        x = torch.cat((
-            x[:, :360].view(x.shape[0], -1, 60),
-            torch.unsqueeze(x[:, 360:376], dim=-1).repeat(repeats=(1, 1, 60)),
-            x[:, 376:].view(x.shape[0], -1, 60)
-        ), dim=1)
 
         x = x.permute(0, 2, 1)
         x = self.stem(x)
