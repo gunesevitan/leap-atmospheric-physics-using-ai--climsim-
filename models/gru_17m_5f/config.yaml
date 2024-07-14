@@ -1,0 +1,62 @@
+model:
+  model_class: 'GRU'
+  model_args:
+    input_dim: 40
+    gru_dim: 512
+    n_layers: 3
+    dropout: 0.0
+    bidirectional: True
+    pooling: 'avg'
+  model_checkpoint_path: null
+
+training:
+  folds: [3]
+  metric_frequency: 0
+  loss_function: 'MSELoss'
+  loss_function_args: {}
+  training_batch_size: 2048
+  test_batch_size: 4096
+  num_workers: 16
+  random_state: 42
+  deterministic_cudnn: False
+  device: 'cuda'
+  optimizer: 'AdamW'
+  optimizer_args:
+    lr: 0.001
+    betas: [0.9, 0.999]
+    weight_decay: 0.01
+  lr_scheduler: 'OneCycleLR'
+  lr_scheduler_args:
+    max_lr: 0.001
+    total_steps: 78840
+    pct_start: 0.1
+    anneal_strategy: 'cos'
+    div_factor: 10
+    final_div_factor: 1
+    last_epoch: -1
+  amp: False
+  epochs: 50
+  early_stopping_metric: 'loss'
+  early_stopping_patience: 0
+
+test:
+  folds: [1, 2, 3, 5]
+  model_file_names: [
+    'model_fold_1_epoch_20_best_loss_0.264954.pt',
+    'model_fold_2_epoch_20_best_loss_0.269249.pt',
+    'model_fold_3_epoch_19_best_loss_0.257146.pt',
+    'model_fold_5_epoch_19_best_loss_0.288264.pt'
+  ]
+
+submission:
+  model_file_names: [
+    'model_fold_1_epoch_20_best_loss_0.264954.pt',
+    'model_fold_2_epoch_20_best_loss_0.269249.pt',
+    'model_fold_3_epoch_19_best_loss_0.257146.pt',
+    'model_fold_5_epoch_19_best_loss_0.288264.pt'
+  ]
+
+persistence:
+  save_prediction_visualizations: True
+  save_best_metrics: ['loss']
+  save_epochs: []
